@@ -1,0 +1,7 @@
+{
+  "faults": {
+    "verify_fail": true,
+    "error_restore_backup": true
+  }
+}
+

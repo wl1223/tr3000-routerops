@@ -1,0 +1,9 @@
+{
+  "openclash": {
+    "status": {"installed": true, "running": false, "mode": "fake-ip"},
+    "process": {"name": "mihomo", "running": false, "rss_mb": 0},
+    "logs": ["mock fatal: core exited"],
+    "test": {"success": false, "controller": false, "dns": false, "rules": false}
+  }
+}
+

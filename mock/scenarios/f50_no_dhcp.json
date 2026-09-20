@@ -1,0 +1,17 @@
+{
+  "interfaces": [
+    {"name": "br-lan", "up": true, "ipv4": ["192.168.10.1/24"], "ipv6": ["fd00::1/64"]},
+    {"name": "usb0", "up": true, "ipv4": [], "ipv6": []}
+  ],
+  "routes": [],
+  "dhcp": {
+    "wan_client": true,
+    "wan_lease": null,
+    "lease_seconds": 0
+  },
+  "f50": {
+    "address": null,
+    "gateway": null
+  }
+}
+

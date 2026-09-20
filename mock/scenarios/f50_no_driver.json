@@ -1,0 +1,17 @@
+{
+  "usb": {
+    "logs": ["usb 2-1: new SuperSpeed USB device", "usb 2-1: no compatible network driver"],
+    "network_devices": []
+  },
+  "interfaces": [
+    {"name": "br-lan", "up": true, "ipv4": ["192.168.10.1/24"], "ipv6": ["fd00::1/64"]}
+  ],
+  "f50": {
+    "usb_present": true,
+    "driver": null,
+    "interface": null,
+    "address": null,
+    "gateway": null
+  }
+}
+

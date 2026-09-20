@@ -1,0 +1,110 @@
+{
+  "system": {
+    "model": "Cudy TR3000 v1 (MOCK)",
+    "firmware": "QWRT R26.1.1 (MOCK)",
+    "kernel": "6.6.121",
+    "platform": "mediatek/mt798x",
+    "cpu": "ARMv8 Processor x 2",
+    "temperature_c": 53.0,
+    "uptime_seconds": 86400
+  },
+  "memory": {
+    "total_mb": 256,
+    "available_mb": 112,
+    "swap_total_mb": 0,
+    "oom_events": []
+  },
+  "storage": {
+    "root_total_mb": 96,
+    "root_available_mb": 42,
+    "tmp_available_mb": 91
+  },
+  "interfaces": [
+    {"name": "br-lan", "up": true, "ipv4": ["192.168.10.1/24"], "ipv6": ["fd00::1/64"]},
+    {"name": "usb0", "up": true, "ipv4": ["192.168.0.2/24"], "ipv6": []}
+  ],
+  "routes": [
+    {"default": true, "interface": "usb0", "gateway": "192.168.0.1", "family": "ipv4"}
+  ],
+  "dns": {
+    "service": "dnsmasq",
+    "listeners": ["127.0.0.1:53"],
+    "upstreams": ["127.0.0.1:7874"],
+    "resolution_ok": true,
+    "ipv6_enabled": true
+  },
+  "dhcp": {
+    "lan_server": true,
+    "wan_client": true,
+    "wan_lease": "192.168.0.2",
+    "lease_seconds": 3600
+  },
+  "firewall": {
+    "implementation": "fw4/nftables",
+    "wan_zone": ["usb0"],
+    "masquerade": true,
+    "forwarding": true
+  },
+  "usb": {
+    "devices": [
+      {"vendor": "ZTE", "product": "F50 5G CPE", "vid": "19d2", "pid": "1476", "is_f50": true}
+    ],
+    "logs": ["usb 2-1: new SuperSpeed USB device", "rndis_host 2-1:1.0 usb0: register"],
+    "network_devices": [{"name": "usb0", "driver": "rndis_host", "up": true}]
+  },
+  "f50": {
+    "usb_present": true,
+    "driver": "rndis_host",
+    "interface": "usb0",
+    "address": "192.168.0.2",
+    "gateway": "192.168.0.1"
+  },
+  "openclash": {
+    "status": {"installed": true, "running": true, "mode": "fake-ip"},
+    "version": {"plugin": "discovered-mock-version", "core": "discovered-mock-mihomo"},
+    "process": {"name": "mihomo", "running": true, "rss_mb": 61},
+    "config": {
+      "source": "mock",
+      "tun": true,
+      "redir": false,
+      "fake_ip": true,
+      "dns": true,
+      "ipv4": true,
+      "ipv6": true,
+      "rule_providers": 8,
+      "proxy_groups": 19
+    },
+    "logs": ["mock core started", "mock providers loaded"],
+    "test": {"success": true, "controller": true, "dns": true, "rules": true}
+  },
+  "vps": {
+    "dns": true,
+    "tcp": true,
+    "tls": true,
+    "service": true,
+    "latency_ms": 83
+  },
+  "security": {
+    "ssh_wan_exposed": false,
+    "password_auth": false,
+    "unexpected_listeners": [],
+    "firewall_policy": "drop"
+  },
+  "probes": {
+    "1.1.1.1": {"success": true, "latency_ms": 38},
+    "www.cloudflare.com": {"success": true, "status_code": 204},
+    "connectivitycheck.gstatic.com": {"success": true, "status_code": 204},
+    "default": {"success": false}
+  },
+  "uci": {
+    "network": {"wan": {"device": "usb0", "proto": "dhcp"}},
+    "dhcp": {"dnsmasq": {"cachesize": "500"}},
+    "firewall": {"wan": {"masq": "1"}},
+    "openclash": {"config": {"enable": "1"}},
+    "dropbear": {"main": {"Interface": "lan"}},
+    "system": {"system": {"hostname": "TR3000"}}
+  },
+  "uci_diff": [],
+  "faults": {}
+}
+

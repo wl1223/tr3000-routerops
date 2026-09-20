@@ -1,0 +1,10 @@
+{
+  "vps": {
+    "dns": true,
+    "tcp": false,
+    "tls": false,
+    "service": false,
+    "latency_ms": null
+  }
+}
+

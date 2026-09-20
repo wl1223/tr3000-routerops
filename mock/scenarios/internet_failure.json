@@ -1,0 +1,6 @@
+{
+  "probes": {
+    "1.1.1.1": {"success": false, "error": "timeout"}
+  }
+}
+

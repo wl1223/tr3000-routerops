@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RouterOps Knowledge Document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "source_url",
+    "source_type",
+    "source_version",
+    "retrieved_at",
+    "published_at",
+    "applicability",
+    "confidence",
+    "limitations",
+    "review_after",
+    "content_hash",
+    "body"
+  ],
+  "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "source_url": {"type": "string", "format": "uri"},
+    "source_type": {"type": "string"},
+    "source_version": {"type": "string"},
+    "retrieved_at": {"type": "string", "format": "date"},
+    "published_at": {"type": ["string", "null"], "format": "date"},
+    "applicability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "model", "hardware", "firmware", "kernel"],
+      "properties": {
+        "device": {"type": "string"},
+        "model": {"type": "string"},
+        "hardware": {"type": "string"},
+        "firmware": {"type": "string"},
+        "kernel": {"type": "string"}
+      }
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "limitations": {"type": "array", "items": {"type": "string"}},
+    "review_after": {"type": "string", "format": "date"},
+    "content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "body": {"type": "string"}
+  }
+}
+
