@@ -45,6 +45,52 @@ class OpenClashAgent(SpecialistAgent):
         "test_openclash",
     )
 
+    def diagnose(self, facade: ToolFacade, problem: str) -> DiagnosticReport:
+        context = AgentContext(facade, f"openclash-{uuid.uuid4().hex[:12]}")
+        results = {name: context.call(name) for name in self.tools}
+        evidence = [
+            f"{name}: {result.evidence_ref or result.error}"
+            for name, result in results.items()
+        ]
+        memory = results["get_memory"].data
+        status = results["get_openclash_status"].data
+        process = results["get_openclash_process"].data
+        test = results["test_openclash"].data
+        logs = results["get_openclash_logs"].data.get("lines", [])
+        oom = memory.get("oom_events", [])
+        if oom or any("out of memory" in str(line).lower() for line in logs):
+            cause = "256MB 内存压力触发 OOM，OpenClash/Mihomo 进程被终止"
+            recommendation = "减少规则/Provider/并发核心，先评估内存与 swap；本阶段不执行修改"
+            confidence = 0.96
+        elif not status.get("installed"):
+            cause = "未发现 OpenClash 安装证据"
+            recommendation = "核对固件包清单和实际服务名称"
+            confidence = 0.9
+        elif not process.get("running"):
+            cause = "OpenClash 已安装，但未发现 Mihomo/Clash 核心进程"
+            recommendation = "检查插件日志、核心路径发现结果和启动错误"
+            confidence = 0.92
+        elif not test.get("success"):
+            cause = "核心进程存在，但只读运行链路检查未通过"
+            recommendation = "检查实际模式、DNS、TUN/Redir、监听端口和规则日志"
+            confidence = 0.84
+        else:
+            cause = "当前只读采样显示 OpenClash 核心与运行链路正常"
+            recommendation = "保存当前状态并与故障时快照比较"
+            confidence = 0.82
+        return DiagnosticReport(
+            problem=problem,
+            current_status=f"installed={status.get('installed')}, running={process.get('running')}",
+            evidence=evidence,
+            fault_layer=FaultLayer.L6_OPENCLASH,
+            cause=cause,
+            confidence=confidence,
+            risk="真实设备仅执行 Level 0 只读发现；Phase 2 禁止任何修复",
+            recommendations=[recommendation],
+            required_tools=list(self.tools),
+            expected_result="获得版本、核心、进程、过滤后的配置、日志和链路状态",
+        )
+
 
 class VPSDiagnosticAgent(SpecialistAgent):
     tools = ("get_vps_status",)
@@ -142,7 +188,7 @@ class F50Agent:
                 problem,
                 "F50 接口有地址，但没有对应默认路由",
                 evidence,
-                FaultLayer.L4_DHCP_NAT_FIREWALL,
+                FaultLayer.L3_NETWORK,
                 "上行默认路由未安装或路由优先级异常",
                 0.9,
                 ["检查 DHCP 下发网关、路由表和策略路由"],
@@ -197,6 +243,19 @@ class F50Agent:
                     "get_openclash_logs",
                 ],
                 "核心、接管、规则命中和代理探针均成功",
+            )
+        vps = observe("get_vps_status")
+        if vps.get("configured", True) and vps.get("service") is False:
+            return self._report(
+                problem,
+                "F50、Internet、DNS 和 OpenClash 正常，但 VPS 服务探针失败",
+                evidence,
+                FaultLayer.L7_VPS,
+                "VPS TCP/TLS/服务不可用",
+                0.88,
+                ["检查 VPS DNS、端口、TLS 证书和服务监听；本阶段不执行修改"],
+                ["get_vps_status"],
+                "VPS DNS、TCP、TLS 和服务探针恢复",
             )
         return self._report(
             problem,

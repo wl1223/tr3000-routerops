@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "openai",
+  "paramiko",
   "pydantic>=2",
   "pydantic-settings",
   "python-dotenv",
@@ -17,7 +18,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ssh = ["paramiko"]
 mcp = ["mcp"]
 dev = [
   "hypothesis",

@@ -14,15 +14,16 @@ from routerops.models import (
     VerificationResult,
     WorkflowState,
 )
+from routerops.observability.redaction import redact
 from routerops.safety.policy import ApprovalService, SafetyError
-from routerops.tools.backends.base import RouterBackend
+from routerops.tools.backends.base import MutableRouterBackend
 from routerops.tools.facade import ToolFacade
 
 
 class ChangeWorkflow:
     def __init__(
         self,
-        backend: RouterBackend,
+        backend: MutableRouterBackend,
         facade: ToolFacade,
         approvals: ApprovalService,
         backup_dir: Path,
@@ -51,7 +52,17 @@ class ChangeWorkflow:
             self.state = WorkflowState.FAILED_SAFE
             raise SafetyError(f"backup failed: {result.error}")
         path = self.backup_dir / f"{backup_id}.json"
-        path.write_text(json.dumps(self._snapshot, ensure_ascii=False, indent=2))
+        path.write_text(
+            json.dumps(
+                {
+                    "redacted": True,
+                    "source_content_hash": baseline_hash,
+                    "snapshot": redact(self._snapshot),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         artifact = BackupArtifact(
             backup_id=backup_id,
             workflow_id=plan.workflow_id,
@@ -79,6 +90,9 @@ class ChangeWorkflow:
         )
         if current_hash != artifact.content_hash or approval.plan_hash != expected_hash:
             raise SafetyError("plan or router state changed after preview")
+        expected_actions = self.approvals.authorized_actions(plan, artifact.backup_id)
+        if approval.authorized_actions != expected_actions:
+            raise SafetyError("approval was already consumed or changed")
         self.state = WorkflowState.EXECUTING
         for change in plan.changes:
             result = self.facade.invoke(

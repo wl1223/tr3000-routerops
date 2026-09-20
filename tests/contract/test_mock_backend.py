@@ -13,7 +13,7 @@ def test_mock_implements_all_read_tools():
     }
     for spec in build_registry().specs():
         if spec.risk == RiskLevel.READ_ONLY and spec.name != "backup_config":
-            result = backend.execute(spec.name, exceptions.get(spec.name, {}))
+            result = backend.execute_readonly(spec.name, exceptions.get(spec.name, {}))
             assert isinstance(result, dict), spec.name
 
 

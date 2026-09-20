@@ -7,6 +7,14 @@ from typing import Any
 
 class MockRouterBackend:
     device_id = "mock-tr3000-v1"
+    readonly = False
+    mutation_tools = {
+        "restore_backup",
+        "uci_set",
+        "restart_openclash",
+        "restart_dns",
+        "restart_network",
+    }
 
     def __init__(self, scenario: str = "healthy", scenario_dir: Path | None = None) -> None:
         root = scenario_dir or Path(__file__).parents[4] / "mock" / "scenarios"
@@ -27,7 +35,17 @@ class MockRouterBackend:
             raise ValueError("backup belongs to a different device model")
         self.state = copy.deepcopy(state)
 
-    def execute(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def execute_readonly(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if tool in self.mutation_tools:
+            raise RuntimeError("mutation tool cannot use the read-only adapter path")
+        return self._execute_registered(tool, arguments)
+
+    def execute_mutation(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if tool not in self.mutation_tools:
+            raise RuntimeError("read-only tool cannot use the mutation adapter path")
+        return self._execute_registered(tool, arguments)
+
+    def _execute_registered(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self.state.get("faults", {}).get(f"error_{tool}"):
             raise RuntimeError(f"injected failure for {tool}")
         handlers: dict[str, Callable[[], dict[str, Any]]] = {
@@ -36,6 +54,10 @@ class MockRouterBackend:
             "get_memory": lambda: self.state["memory"],
             "get_storage": lambda: self.state["storage"],
             "get_uptime": lambda: {"seconds": self.state["system"]["uptime_seconds"]},
+            "get_services": lambda: {
+                "services": ["network", "firewall", "dnsmasq", "openclash", "dropbear"]
+            },
+            "get_uci_capability": lambda: {"uci": True, "ubus": True},
             "get_interfaces": lambda: {"interfaces": self.state["interfaces"]},
             "get_routes": lambda: {"routes": self.state["routes"]},
             "get_dns": lambda: self.state["dns"],
@@ -87,6 +109,13 @@ class MockRouterBackend:
             current = current.get(section)
         if option and isinstance(current, dict):
             current = current.get(option)
+        if (
+            self.state.get("faults", {}).get("verify_fail")
+            and package == "dhcp"
+            and option == "cachesize"
+            and current == "800"
+        ):
+            current = "verification-mismatch"
         return {"value": current}
 
     def _uci_set(self, arguments: dict[str, Any]) -> dict[str, Any]:

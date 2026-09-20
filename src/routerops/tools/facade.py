@@ -5,7 +5,7 @@ from routerops.evidence import EvidenceStore
 from routerops.models import ApprovalRequest, RunMode, ToolCall, ToolResult, ToolStatus
 from routerops.observability.redaction import redact
 from routerops.safety.policy import SafetyError, SafetyPolicy
-from routerops.tools.backends.base import RouterBackend
+from routerops.tools.backends.base import MutableRouterBackend, RouterBackend
 from routerops.tools.registry import ToolRegistry
 
 
@@ -30,6 +30,8 @@ class ToolFacade:
     ) -> ToolResult:
         try:
             spec = self.registry.get(call.name)
+            if self.backend.readonly and spec.risk.value > 0:
+                raise RealDeviceWriteDisabledError()
             self.policy.authorize(
                 spec,
                 self.mode,
@@ -39,7 +41,12 @@ class ToolFacade:
             )
             lock = self._write_lock if spec.risk.value > 0 else _NullLock()
             with lock:
-                raw = self.backend.execute(call.name, call.arguments)
+                if spec.risk.value > 0:
+                    if not isinstance(self.backend, MutableRouterBackend):
+                        raise RealDeviceWriteDisabledError()
+                    raw = self.backend.execute_mutation(call.name, call.arguments)
+                else:
+                    raw = self.backend.execute_readonly(call.name, call.arguments)
             safe = redact(raw)
             encoded = json.dumps(safe, ensure_ascii=False, default=str).encode()
             warnings: list[str] = []
@@ -66,4 +73,9 @@ class _NullLock:
 
     def __exit__(self, *_args: object) -> None:
         return None
+
+
+class RealDeviceWriteDisabledError(SafetyError):
+    def __init__(self) -> None:
+        super().__init__("REAL_DEVICE_WRITE_DISABLED_IN_PHASE2")
 

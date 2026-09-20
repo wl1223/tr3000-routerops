@@ -29,6 +29,23 @@ class RulePlanner:
         return "network"
 
 
+class FakeLLM:
+    """Offline deterministic tool caller for safety and scenario tests."""
+
+    def __init__(self, facade: ToolFacade) -> None:
+        self.facade = facade
+
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        result = self.facade.invoke(
+            ToolCall(
+                name=name,
+                arguments=arguments or {},
+                workflow_id=f"fake-llm-{uuid.uuid4().hex[:12]}",
+            )
+        )
+        return result.model_dump(mode="json")
+
+
 class OpenAICompatiblePlanner:
     def __init__(
         self,

@@ -5,22 +5,39 @@ from typing import Annotated
 import typer
 
 from routerops.config import Settings
+from routerops.device.discovery import CapabilityDiscovery, DeviceCapabilities
 from routerops.evidence import EvidenceStore
 from routerops.memory import MemoryStore
-from routerops.models import Change, ChangePlan, RiskLevel, RunMode, VerificationResult
+from routerops.models import (
+    Change,
+    ChangePlan,
+    RiskLevel,
+    RunMode,
+    ToolCall,
+    ToolStatus,
+    VerificationResult,
+)
 from routerops.orchestration import Supervisor
 from routerops.recovery import ChangeWorkflow
 from routerops.safety import ApprovalService, SafetyPolicy
 from routerops.tools import ToolFacade, build_registry
-from routerops.tools.backends import MockRouterBackend
+from routerops.tools.backends import (
+    MockRouterBackend,
+    RouterBackend,
+    build_backend,
+)
 
-app = typer.Typer(help="TR3000 RouterOps (phase one: mock backend only)")
+app = typer.Typer(help="TR3000 RouterOps safety-first network agent")
+device_app = typer.Typer(help="Read-only device discovery and state capture")
+diagnose_app = typer.Typer(help="Layered read-only diagnostics")
+app.add_typer(device_app, name="device")
+app.add_typer(diagnose_app, name="diagnose")
 
 
-def runtime() -> tuple[Settings, MockRouterBackend, ToolFacade, Supervisor]:
+def runtime() -> tuple[Settings, RouterBackend, ToolFacade, Supervisor]:
     settings = Settings()
     settings.ensure_directories()
-    backend = MockRouterBackend(settings.scenario)
+    backend = build_backend(settings)
     evidence = EvidenceStore(settings.data_dir / "evidence")
     memory = MemoryStore(settings.data_dir / "routerops.sqlite3")
     facade = ToolFacade(
@@ -49,7 +66,8 @@ def status() -> None:
                 "mode": settings.mode,
                 "backend": settings.backend,
                 "scenario": settings.scenario,
-                "real_ssh_enabled": False,
+                "real_ssh_enabled": settings.backend == "ssh",
+                "real_device_readonly": backend.readonly,
                 "registered_tools": [item.name for item in facade.registry.specs()],
             },
             ensure_ascii=False,
@@ -60,7 +78,7 @@ def status() -> None:
 
 @app.command()
 def baseline() -> None:
-    """Capture a mock TR3000 baseline using read-only tools."""
+    """Capture a TR3000 baseline using read-only tools."""
     _, _, _, supervisor = runtime()
     _, digest = supervisor.capture_state(baseline=True)
     typer.echo(f"TR3000_BASELINE.json created (sha256={digest})")
@@ -68,7 +86,7 @@ def baseline() -> None:
 
 @app.command("current-state")
 def current_state() -> None:
-    """Capture current mock state."""
+    """Capture current state."""
     _, _, _, supervisor = runtime()
     _, digest = supervisor.capture_state(baseline=False)
     typer.echo(f"CURRENT_STATE.json created (sha256={digest})")
@@ -76,7 +94,7 @@ def current_state() -> None:
 
 @app.command("state-diff")
 def state_diff() -> None:
-    """Compare current mock state with the baseline."""
+    """Compare current state with the baseline."""
     _, _, _, supervisor = runtime()
     typer.echo(json.dumps(supervisor.state_diff(), ensure_ascii=False, indent=2))
 
@@ -85,9 +103,91 @@ def state_diff() -> None:
 def diagnose_f50(
     problem: Annotated[str, typer.Argument()] = "F50启动后TR3000无法自动识别。",
 ) -> None:
-    """Run the layered F50 diagnosis against a mock scenario."""
+    """Compatibility alias for `routerops diagnose f50`."""
     _, _, _, supervisor = runtime()
     typer.echo(supervisor.diagnose_f50(problem).chinese_sections())
+
+
+def _discover(
+    settings: Settings,
+    backend: RouterBackend,
+    facade: ToolFacade,
+) -> DeviceCapabilities:
+    model = settings.device_model_expectation
+    firmware = settings.device_firmware_expectation
+    return CapabilityDiscovery().discover(
+        facade,
+        backend.device_id,
+        model_expectation=model,
+        firmware_expectation=firmware,
+    )
+
+
+@device_app.command("probe")
+def device_probe() -> None:
+    """Discover real capabilities without assuming paths or service names."""
+    settings, backend, facade, _ = runtime()
+    capabilities = _discover(settings, backend, facade)
+    facade.evidence.snapshot(
+        settings.data_dir / "devices" / "tr3000" / "capabilities.json",
+        capabilities.model_dump(mode="json"),
+    )
+    typer.echo(capabilities.model_dump_json(indent=2))
+
+
+@device_app.command("baseline")
+def device_baseline() -> None:
+    """Create baseline, current state, and capability files in one read-only run."""
+    settings, backend, facade, supervisor = runtime()
+    capabilities = _discover(settings, backend, facade)
+    _, digest = supervisor.capture_device_baseline(
+        capabilities.model_dump(mode="json")
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "baseline": "TR3000_BASELINE.json",
+                "current": "current.json",
+                "capabilities": "capabilities.json",
+                "sha256": digest,
+                "readonly": True,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@device_app.command("status")
+def device_status() -> None:
+    """Capture CURRENT_STATE and current.json using read-only tools."""
+    _, _, _, supervisor = runtime()
+    _, digest = supervisor.capture_state(baseline=False)
+    typer.echo(
+        json.dumps(
+            {"current": "current.json", "sha256": digest, "readonly": True},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+@diagnose_app.command("f50")
+def diagnose_f50_nested(
+    problem: Annotated[str, typer.Argument()] = "F50启动后TR3000无法自动识别。",
+) -> None:
+    """Diagnose F50 from USB enumeration through VPS/Internet."""
+    _, _, _, supervisor = runtime()
+    typer.echo(supervisor.diagnose_f50(problem).chinese_sections())
+
+
+@diagnose_app.command("openclash")
+def diagnose_openclash(
+    problem: Annotated[str, typer.Argument()] = "检查 OpenClash 当前状态",
+) -> None:
+    """Discover and diagnose OpenClash without modifying it."""
+    _, _, _, supervisor = runtime()
+    typer.echo(supervisor.diagnose_openclash(problem).chinese_sections())
 
 
 @app.command("change-demo")
@@ -99,12 +199,21 @@ def change_demo(
 ) -> None:
     """Exercise backup, approval, verification, and rollback on Mock Router."""
     settings, backend, facade, _ = runtime()
+    if not isinstance(backend, MockRouterBackend):
+        raise typer.BadParameter("REAL_DEVICE_WRITE_DISABLED_IN_PHASE2")
     if settings.mode != 4:
         raise typer.BadParameter("change-demo requires ROUTEROPS_MODE=4")
     workflow_id = f"change-{uuid.uuid4().hex[:12]}"
-    old = backend.execute(
-        "uci_get", {"package": "dhcp", "section": "dnsmasq", "option": "cachesize"}
-    )["value"]
+    old_result = facade.invoke(
+        ToolCall(
+            name="uci_get",
+            arguments={"package": "dhcp", "section": "dnsmasq", "option": "cachesize"},
+            workflow_id=workflow_id,
+        )
+    )
+    if old_result.status != ToolStatus.OK:
+        raise typer.BadParameter(f"read failed: {old_result.error}")
+    old = old_result.data["value"]
     plan = ChangePlan(
         workflow_id=workflow_id,
         device_id=backend.device_id,
@@ -143,10 +252,18 @@ def change_demo(
     approved = approvals.approve(request, plan, artifact.content_hash)
 
     def verify() -> VerificationResult:
-        value = backend.execute(
-            "uci_get", {"package": "dhcp", "section": "dnsmasq", "option": "cachesize"}
-        )["value"]
-        success = value == "800" and not backend.state.get("faults", {}).get("verify_fail")
+        result = facade.invoke(
+            ToolCall(
+                name="uci_get",
+                arguments={
+                    "package": "dhcp",
+                    "section": "dnsmasq",
+                    "option": "cachesize",
+                },
+                workflow_id=workflow_id,
+            )
+        )
+        success = result.status == ToolStatus.OK and result.data.get("value") == "800"
         return VerificationResult(
             success=success,
             checks={"dns_cache_value": success},

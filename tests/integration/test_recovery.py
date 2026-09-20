@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -135,4 +136,42 @@ def test_rollback_failure_enters_failed_safe(make_facade, tmp_path: Path):
     assert not result.success
     assert not result.checks["rollback"]
     assert workflow.state == WorkflowState.FAILED_SAFE
+
+
+def test_approval_is_consumed_after_rollback(make_facade, tmp_path: Path):
+    backend, facade = make_facade("rollback_required", RunMode.MAINTENANCE)
+    change = plan(backend.device_id)
+    approvals = ApprovalService()
+    workflow = ChangeWorkflow(backend, facade, approvals, tmp_path / "backups")
+    artifact, request = workflow.prepare(change)
+    approved = approvals.approve(request, change, artifact.content_hash)
+    workflow.execute(
+        change,
+        artifact,
+        approved,
+        lambda: VerificationResult(success=False, checks={"probe": False}, message="failed"),
+    )
+    with pytest.raises(SafetyError, match="consumed"):
+        workflow.execute(
+            change,
+            artifact,
+            approved,
+            lambda: VerificationResult(success=True, checks={"probe": True}, message="ok"),
+        )
+
+
+def test_persisted_backup_is_redacted(make_facade, tmp_path: Path):
+    backend, facade = make_facade(mode=RunMode.MAINTENANCE)
+    backend.state["uci"]["wireless"] = {
+        "radio": {"key": "wifi-secret", "password": "admin-secret"}
+    }
+    workflow = ChangeWorkflow(
+        backend, facade, ApprovalService(), tmp_path / "backups"
+    )
+    artifact, _ = workflow.prepare(plan(backend.device_id))
+    persisted = json.loads(Path(artifact.path).read_text())
+    encoded = json.dumps(persisted)
+    assert "wifi-secret" not in encoded
+    assert "admin-secret" not in encoded
+    assert encoded.count("REDACTED") >= 2
 

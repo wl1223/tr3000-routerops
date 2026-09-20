@@ -2,17 +2,19 @@
 
 Safety-first AI network operations agent for a Cudy TR3000 v1 running QWRT.
 
-Phase one is deliberately isolated from real hardware. It runs only against a stateful
-Mock Router and proves the diagnostic, permission, approval, backup, verification, and
-rollback paths before SSH support is enabled.
+Phase two supports both the stateful Mock Router and a strictly read-only Paramiko SSH
+adapter. The real adapter has no generic command method and no mutation method. It maps
+registered tools to fixed command templates, normalizes and redacts raw observations,
+then passes typed data to diagnostics.
 
 ## Safety boundary
 
 - Default: `MODE 1` (read-only diagnosis) and `mock` backend.
+- Real SSH is accepted only in MODE 1 with a pinned SHA-256 host key.
+- Real-device writes always return `REAL_DEVICE_WRITE_DISABLED_IN_PHASE2`.
 - No arbitrary shell tool exists.
-- Real SSH is disabled in code; SSH settings are reserved for phase two.
 - High-risk writes require MODE 4, an immutable backup, exact diff, unexpired approval
-  bound to the plan and baseline hashes, deterministic verification, and automatic rollback.
+  bound to one-time exact calls and baseline hashes. This path remains Mock-only.
 - Firmware flashing, factory reset, package installation, config deletion, and unrestricted
   root commands are not tools.
 - Secrets are redacted before logs, evidence, SQLite memory, or LLM context.
@@ -26,8 +28,8 @@ python -m pip install -e ".[dev]"
 cp .env.example .env
 
 routerops status
-routerops baseline
-routerops diagnose-f50 "F50启动后TR3000无法自动识别。"
+routerops device baseline
+routerops diagnose f50 "F50启动后TR3000无法自动识别。"
 routerops current-state
 routerops state-diff
 ```
@@ -40,6 +42,52 @@ ROUTEROPS_SCENARIO=f50_no_driver routerops diagnose-f50 "F50无法联网"
 ROUTEROPS_SCENARIO=f50_no_dhcp routerops diagnose-f50 "F50无法联网"
 ROUTEROPS_SCENARIO=openclash_failure routerops diagnose-f50 "F50无法联网"
 ```
+
+## Read-only TR3000 connection
+
+Do not copy a host key fingerprint from an untrusted network. Verify it through the
+router UI, console, or another trusted channel first:
+
+```bash
+ssh-keyscan -p 22 192.168.10.1 2>/dev/null | ssh-keygen -lf - -E sha256
+cp .env.example .env
+chmod 600 .env
+```
+
+Configure `.env` without committing it:
+
+```dotenv
+ROUTEROPS_MODE=1
+ROUTEROPS_BACKEND=ssh
+ROUTEROPS_SSH_HOST=192.168.10.1
+ROUTEROPS_SSH_PORT=22
+ROUTEROPS_SSH_USERNAME=root
+ROUTEROPS_SSH_AUTH_METHOD=agent
+ROUTEROPS_SSH_HOST_KEY_SHA256=SHA256:verified-fingerprint
+```
+
+Use an SSH agent or a dedicated read-only key where QWRT permits it. Password and private
+key-path settings use `SecretStr` and are never persisted in baseline, evidence, audit,
+exceptions, or LLM context.
+
+```bash
+routerops device probe
+routerops device baseline
+routerops device status
+routerops state-diff
+routerops diagnose f50 "F50启动后TR3000无法自动识别。"
+routerops diagnose openclash
+```
+
+The first baseline writes:
+
+- `var/devices/tr3000/TR3000_BASELINE.json`
+- `var/devices/tr3000/CURRENT_STATE.json`
+- `var/devices/tr3000/current.json`
+- `var/devices/tr3000/capabilities.json`
+
+All commands above are read-only. Phase 2 does not implement real restart, UCI mutation,
+restore, firewall change, OpenClash change, reboot, sysupgrade, or automatic healing.
 
 Exercise an approved mock change:
 
@@ -83,10 +131,10 @@ Durable knowledge under `knowledge/` records its source, source version, retriev
 device/firmware applicability, confidence, limitations, review date, and content hash.
 Generic OpenWrt guidance is not treated as directly applicable to QWRT R26.1.1.
 
-Runtime output is excluded from Git:
+Runtime output under `var/` is excluded from Git:
 
-- `data/devices/tr3000/TR3000_BASELINE.json`
-- `data/devices/tr3000/CURRENT_STATE.json`
+- `var/devices/tr3000/TR3000_BASELINE.json`
+- `var/devices/tr3000/CURRENT_STATE.json`
 - immutable tool evidence and backups
 - SQLite workflow and incident memory
 

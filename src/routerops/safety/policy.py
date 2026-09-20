@@ -29,6 +29,7 @@ class SafetyPolicy:
     ) -> None:
         if mode < spec.min_mode:
             raise SafetyError(f"{spec.name} requires mode {int(spec.min_mode)}")
+        self.validate_tool_schema(spec, arguments)
         self.validate_arguments(spec.name, arguments)
         if spec.risk == RiskLevel.LOW and not user_notified:
             raise SafetyError("user notification required before low-risk action")
@@ -37,8 +38,34 @@ class SafetyPolicy:
                 raise SafetyError("approval required for high-risk tool")
             if approval.expires_at <= datetime.now(UTC):
                 raise SafetyError("approval has expired")
-            if self.action_hash(spec.name, arguments) not in approval.authorized_actions:
+            action = self.action_hash(spec.name, arguments)
+            if action not in approval.authorized_actions:
                 raise SafetyError("tool call is outside the approved change plan")
+            approval.authorized_actions.remove(action)
+
+    def validate_tool_schema(
+        self, spec: ToolSpec, arguments: dict[str, Any]
+    ) -> None:
+        properties = spec.input_schema.get("properties", {})
+        required = set(spec.input_schema.get("required", []))
+        if not isinstance(properties, dict):
+            raise SafetyError("invalid internal tool schema")
+        if set(arguments) - set(properties):
+            raise SafetyError("tool arguments contain undeclared fields")
+        if required - set(arguments):
+            raise SafetyError("tool arguments are missing required fields")
+        for name, value in arguments.items():
+            rule = properties.get(name, {})
+            if not isinstance(rule, dict):
+                raise SafetyError("invalid internal argument schema")
+            if rule.get("type") == "string" and not isinstance(value, str):
+                raise SafetyError(f"{name} must be a string")
+            if "enum" in rule and value not in rule["enum"]:
+                raise SafetyError(f"{name} is not allowlisted")
+            if "maxLength" in rule and len(str(value)) > int(rule["maxLength"]):
+                raise SafetyError(f"{name} exceeds the maximum length")
+            if "pattern" in rule and not re.fullmatch(str(rule["pattern"]), str(value)):
+                raise SafetyError(f"{name} has an invalid format")
 
     def validate_arguments(self, tool: str, arguments: dict[str, Any]) -> None:
         if tool.startswith("uci_") and tool not in {"uci_diff"}:

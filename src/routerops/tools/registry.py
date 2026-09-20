@@ -87,6 +87,8 @@ def build_registry() -> ToolRegistry:
             "get_memory",
             "get_storage",
             "get_uptime",
+            "get_services",
+            "get_uci_capability",
         ],
         "network": [
             "get_interfaces",
