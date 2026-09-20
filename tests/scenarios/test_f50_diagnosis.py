@@ -9,11 +9,13 @@ from routerops.models import FaultLayer
     [
         ("f50_absent", FaultLayer.L1_USB_DRIVER),
         ("f50_no_driver", FaultLayer.L1_USB_DRIVER),
+        ("f50_netdev_missing", FaultLayer.L2_LINUX),
         ("f50_no_dhcp", FaultLayer.L4_DHCP_NAT_FIREWALL),
         ("f50_no_route", FaultLayer.L3_NETWORK),
         ("internet_failure", FaultLayer.L4_DHCP_NAT_FIREWALL),
         ("dns_failure", FaultLayer.L5_DNS),
         ("openclash_failure", FaultLayer.L6_OPENCLASH),
+        ("vps_failure", FaultLayer.L7_VPS),
         ("healthy", FaultLayer.L8_INTERNET),
     ],
 )

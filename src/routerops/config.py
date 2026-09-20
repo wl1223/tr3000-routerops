@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     mode: int = Field(default=1, ge=1, le=4)
-    backend: Literal["mock", "ssh"] = "mock"
+    backend: Literal["mock", "ssh", "replay"] = "mock"
     scenario: str = "healthy"
     data_dir: Path = Path("var")
     llm_enabled: bool = False
@@ -32,15 +32,21 @@ class Settings(BaseSettings):
     ssh_host_key_sha256: SecretStr | None = None
     device_model_expectation: str = "Cudy TR3000 v1"
     device_firmware_expectation: str = "QWRT R26.1.1"
+    fixture_capture_dir: Path | None = None
+    fixture_replay_dir: Path | None = None
     telegram_token: SecretStr | None = None
 
     @model_validator(mode="after")
     def validate_phase_two_boundary(self) -> "Settings":
+        if self.backend in {"ssh", "replay"} and self.mode != 1:
+            raise ValueError("real SSH and fixture replay are restricted to MODE 1")
         if self.backend == "ssh":
-            if self.mode != 1:
-                raise ValueError("real SSH is restricted to MODE 1 in phase two")
             if not self.ssh_host or self.ssh_host_key_sha256 is None:
                 raise ValueError("SSH backend requires host and pinned host-key SHA256")
+        if self.fixture_capture_dir is not None and self.backend != "ssh":
+            raise ValueError("fixture capture is available only for the SSH backend")
+        if self.backend == "replay" and self.fixture_replay_dir is None:
+            raise ValueError("replay backend requires a fixture replay directory")
         return self
 
     def ensure_directories(self) -> None:

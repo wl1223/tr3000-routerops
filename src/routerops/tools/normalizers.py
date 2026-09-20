@@ -99,9 +99,127 @@ def normalize_observation(raw: RawObservation) -> dict[str, Any]:
     }
     parser = parsers.get(raw.tool)
     if parser is None:
-        raise NormalizationError("no normalizer for read-only tool")
-    result = parser(stdout, stderr, raw.exit_code)
-    return dict(redact(result))
+        return _fallback(raw.tool, raw.exit_code, "NORMALIZER_NOT_REGISTERED")
+    try:
+        result = parser(stdout, stderr, raw.exit_code)
+    except Exception:
+        return _fallback(raw.tool, raw.exit_code, "NORMALIZATION_FAILED")
+    safe = dict(redact(result))
+    safe["_meta"] = {
+        "available": raw.exit_code == 0,
+        "partial": raw.exit_code != 0 and bool(stdout.strip()),
+        "exit_code": raw.exit_code,
+        "error_code": None if raw.exit_code == 0 else "COMMAND_FAILED",
+    }
+    return safe
+
+
+def _fallback(tool: str, exit_code: int, error_code: str) -> dict[str, Any]:
+    defaults: dict[str, dict[str, Any]] = {
+        "get_system_info": {
+            "model": "unknown",
+            "firmware": "unknown",
+            "kernel": "unknown",
+            "architecture": "unknown",
+            "platform": "unknown",
+            "cpu": "unknown",
+        },
+        "get_cpu_temp": {"celsius": None, "available": False},
+        "get_memory": {
+            "total_mb": 0,
+            "available_mb": 0,
+            "swap_total_mb": 0,
+            "swap_free_mb": 0,
+            "oom_events": [],
+        },
+        "get_storage": {"filesystems": []},
+        "get_uptime": {"seconds": None},
+        "get_interfaces": {"interfaces": []},
+        "get_routes": {"routes": []},
+        "get_dns": {
+            "service": "unknown",
+            "listeners": [],
+            "upstreams": [],
+            "resolution_ok": False,
+            "ipv6_enabled": False,
+        },
+        "get_dhcp": {
+            "lan_server": False,
+            "wan_client": False,
+            "wan_lease": None,
+            "interfaces": [],
+        },
+        "get_firewall": {
+            "implementation": "unknown",
+            "masquerade": False,
+            "forwarding": False,
+            "summary": [],
+        },
+        "get_usb_devices": {"devices": []},
+        "get_usb_logs": {"lines": []},
+        "get_usb_network_devices": {"interfaces": []},
+        "get_f50_status": {
+            "usb_present": False,
+            "driver": None,
+            "interface": None,
+            "address": None,
+            "gateway": None,
+        },
+        "get_openclash_status": {
+            "installed": False,
+            "running": False,
+            "mode": "unknown",
+            "raw_available": False,
+        },
+        "get_openclash_version": {"plugin": None, "core": None},
+        "get_openclash_process": {
+            "name": None,
+            "running": False,
+            "processes": [],
+        },
+        "get_openclash_logs": {"lines": []},
+        "get_openclash_config": {
+            "source": "unavailable",
+            "config_location": None,
+            "run_mode": "unknown",
+            "tun": False,
+            "redir": False,
+            "fake_ip": False,
+            "dns": False,
+            "ipv4": None,
+            "ipv6": None,
+            "rule_providers": None,
+            "geo": {},
+            "proxy_groups": None,
+            "safe_options": {},
+        },
+        "test_openclash": {
+            "success": False,
+            "controller": False,
+            "dns": None,
+            "rules": None,
+        },
+        "get_vps_status": {"configured": False, "status": "unavailable"},
+        "get_security_status": {
+            "ssh_wan_exposed": None,
+            "password_auth": None,
+            "listeners": [],
+            "dropbear": [],
+        },
+        "get_services": {"services": []},
+        "get_uci_capability": {"uci": False, "ubus": False},
+        "ping": {"success": False, "latency_ms": None, "status_code": None},
+        "traceroute": {"success": False, "latency_ms": None, "status_code": None},
+        "curl_test": {"success": False, "latency_ms": None, "status_code": None},
+    }
+    result = dict(defaults.get(tool, {}))
+    result["_meta"] = {
+        "available": False,
+        "partial": False,
+        "exit_code": exit_code,
+        "error_code": error_code,
+    }
+    return result
 
 
 def _json(text: str) -> dict[str, Any]:
@@ -251,7 +369,12 @@ def _routes(text: str, _stderr: str, _code: int) -> dict[str, Any]:
 def _dns(text: str, _stderr: str, code: int) -> dict[str, Any]:
     resolv, _, lookup = text.partition("--LOOKUP--")
     upstreams = re.findall(r"^nameserver\s+(\S+)", resolv, re.M)
-    success = code == 0 and bool(re.search(r"(?im)^Address(?: \d+)?:\s+\S+", lookup))
+    answer_section = lookup.partition("Name:")[2]
+    success = (
+        code == 0
+        and "--LOOKUP-FAILED--" not in lookup
+        and bool(re.search(r"(?im)^Address(?: \d+)?:\s+\S+", answer_section))
+    )
     return DNSObservation(
         service="discovered",
         listeners=["127.0.0.1:53"],
@@ -272,7 +395,7 @@ def _dhcp(text: str, _stderr: str, _code: int) -> dict[str, Any]:
         None,
     )
     return {
-        "lan_server": "--LEASES--" in text,
+        "lan_server": "--LEASES-PRESENT--" in text,
         "wan_client": wan is not None,
         "wan_lease": wan["ipv4"][0].split("/", 1)[0] if wan and wan["ipv4"] else None,
         "interfaces": interfaces,
@@ -280,7 +403,8 @@ def _dhcp(text: str, _stderr: str, _code: int) -> dict[str, Any]:
 
 
 def _firewall(text: str, _stderr: str, code: int) -> dict[str, Any]:
-    implementation = "nftables" if "nft" in text.splitlines()[:1] else "iptables"
+    match = re.search(r"(?m)^implementation=(nftables|iptables|unknown)$", text)
+    implementation = match.group(1) if match else "unknown"
     return {
         "implementation": implementation,
         "masquerade": bool(re.search(r"\.masq='?1'?", text)),
@@ -305,14 +429,14 @@ def _usb_devices(text: str, _stderr: str, _code: int) -> dict[str, Any]:
 def _usb_network(text: str, _stderr: str, _code: int) -> dict[str, Any]:
     interfaces = []
     for line in text.splitlines():
-        name, _, path = line.partition("|")
+        parts = line.split("|", 3)
+        name = parts[0]
         if name:
-            driver_match = re.search(r"/drivers/([^/]+)", path)
             interfaces.append(
                 {
                     "name": name,
-                    "driver": driver_match.group(1) if driver_match else "discovered-usb",
-                    "up": True,
+                    "driver": parts[2] if len(parts) > 2 and parts[2] else None,
+                    "up": len(parts) > 3 and parts[3] == "up",
                 }
             )
     return {"interfaces": interfaces}
@@ -344,21 +468,29 @@ def _openclash_status(text: str, _stderr: str, code: int) -> dict[str, Any]:
 
 
 def _openclash_version(text: str, _stderr: str, _code: int) -> dict[str, Any]:
+    package_text, _, process_text = text.partition("--PROCESSES--")
     packages = [
         line
-        for line in text.splitlines()
+        for line in package_text.splitlines()
         if re.search(r"(?i)openclash|mihomo|clash", line)
     ]
+    plugin = next((line for line in packages if "openclash" in line.lower()), None)
+    core_match = re.search(r"(?i)(?:^|\s)([^\s/]*(?:mihomo|clash)[^\s/]*)", process_text)
     return {
-        "plugin": packages[0] if packages else None,
-        "core": packages[1] if len(packages) > 1 else None,
+        "plugin": plugin,
+        "core": core_match.group(1) if core_match else None,
     }
 
 
 def _openclash_process(text: str, _stderr: str, _code: int) -> dict[str, Any]:
     lines = [line for line in text.splitlines() if line.strip()]
+    name = None
+    if any("mihomo" in line.lower() for line in lines):
+        name = "mihomo"
+    elif any("clash" in line.lower() for line in lines):
+        name = "clash"
     return {
-        "name": "mihomo" if any("mihomo" in line.lower() for line in lines) else "clash",
+        "name": name,
         "running": bool(lines),
         "processes": lines,
     }

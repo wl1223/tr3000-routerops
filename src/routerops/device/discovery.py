@@ -59,11 +59,14 @@ class CapabilityDiscovery:
         unavailable: list[str] = []
         for name in DISCOVERY_TOOLS:
             result = facade.invoke(ToolCall(name=name, workflow_id=workflow_id))
-            if result.status == ToolStatus.OK:
+            observation_available = result.data.get("_meta", {}).get("available", True)
+            if result.status == ToolStatus.OK and observation_available:
                 available.append(name)
                 observations[name] = result.data
             else:
                 unavailable.append(name)
+                if result.status == ToolStatus.OK:
+                    observations[name] = result.data
         system = observations.get("get_system_info", {})
         services = observations.get("get_services", {}).get("services", [])
         uci = observations.get("get_uci_capability", {})

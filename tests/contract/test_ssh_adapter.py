@@ -82,3 +82,23 @@ def test_profile_secrets_are_masked():
     assert "router-password" not in representation
     assert "host-fingerprint" not in representation
 
+
+def test_failed_command_returns_safe_observation(make_ssh_adapter):
+    adapter, _ = make_ssh_adapter(
+        {"get_system_info": ("ubus: not found", "", 127)}
+    )
+    result = adapter.execute_readonly("get_system_info", {})
+    assert result["model"] == "unknown"
+    assert result["_meta"]["available"] is False
+    assert result["_meta"]["error_code"] == "NORMALIZATION_FAILED"
+
+
+def test_transport_command_error_returns_safe_observation(make_ssh_adapter):
+    adapter, client = make_ssh_adapter()
+    command = ReadonlyCommandRegistry().resolve("get_memory", {}).command
+    del client.responses[command]
+    result = adapter.execute_readonly("get_memory", {})
+    assert result["total_mb"] == 0
+    assert result["_meta"]["available"] is False
+    assert result["_meta"]["exit_code"] == 255
+

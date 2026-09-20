@@ -58,7 +58,11 @@ class OpenClashAgent(SpecialistAgent):
         test = results["test_openclash"].data
         logs = results["get_openclash_logs"].data.get("lines", [])
         oom = memory.get("oom_events", [])
-        if oom or any("out of memory" in str(line).lower() for line in logs):
+        if not status.get("_meta", {}).get("available", True):
+            cause = "OpenClash 只读发现命令在当前固件上不可用或输出无法解析"
+            recommendation = "保存脱敏 fixture，确认 QWRT 实际包管理器、进程和服务输出"
+            confidence = 0.98
+        elif oom or any("out of memory" in str(line).lower() for line in logs):
             cause = "256MB 内存压力触发 OOM，OpenClash/Mihomo 进程被终止"
             recommendation = "减少规则/Provider/并发核心，先评估内存与 swap；本阶段不执行修改"
             confidence = 0.96
@@ -122,6 +126,18 @@ class F50Agent:
             return result.data
 
         usb = observe("get_usb_devices")
+        if not usb.get("_meta", {}).get("available", True):
+            return self._report(
+                problem,
+                "无法获得可靠的 USB 枚举 Observation",
+                evidence,
+                FaultLayer.L2_LINUX,
+                "当前 QWRT 环境缺少兼容的只读 USB 枚举能力或输出无法解析",
+                0.98,
+                ["记录脱敏 fixture 并适配实际 lsusb/sysfs 输出"],
+                ["get_usb_devices"],
+                "获得 available=true 的 USB 枚举 Observation",
+            )
         devices = usb.get("devices", [])
         if not any(device.get("is_f50") for device in devices):
             logs = observe("get_usb_logs")
@@ -153,7 +169,20 @@ class F50Agent:
                 "出现与 F50 对应且状态为 UP 的网络接口",
             )
 
-        interfaces = observe("get_interfaces").get("interfaces", [])
+        interface_observation = observe("get_interfaces")
+        if not interface_observation.get("_meta", {}).get("available", True):
+            return self._report(
+                problem,
+                "USB 网络设备已发现，但接口 Observation 不可用",
+                evidence,
+                FaultLayer.L2_LINUX,
+                "ubus network.interface 输出在当前固件上不可用或无法解析",
+                0.98,
+                ["记录脱敏 fixture 并适配实际 ubus 接口输出"],
+                ["get_interfaces"],
+                "获得 available=true 的接口 Observation",
+            )
+        interfaces = interface_observation.get("interfaces", [])
         names = {item.get("name") for item in network_devices}
         f50_interfaces = [item for item in interfaces if item.get("name") in names]
         if not f50_interfaces:

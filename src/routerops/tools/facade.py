@@ -2,6 +2,7 @@ import json
 import threading
 
 from routerops.evidence import EvidenceStore
+from routerops.fixtures.store import ObservationRecorder
 from routerops.models import ApprovalRequest, RunMode, ToolCall, ToolResult, ToolStatus
 from routerops.observability.redaction import redact
 from routerops.safety.policy import SafetyError, SafetyPolicy
@@ -17,12 +18,14 @@ class ToolFacade:
         policy: SafetyPolicy,
         evidence: EvidenceStore,
         mode: RunMode,
+        recorder: ObservationRecorder | None = None,
     ) -> None:
         self.backend = backend
         self.registry = registry
         self.policy = policy
         self.evidence = evidence
         self.mode = mode
+        self.recorder = recorder
         self._write_lock = threading.Lock()
 
     def invoke(
@@ -54,6 +57,11 @@ class ToolFacade:
                 safe = {"truncated": True, "bytes": len(encoded)}
                 warnings.append("output exceeded the tool limit and was not retained")
             evidence_ref = self.evidence.write(call.name, safe)
+            if self.recorder is not None:
+                try:
+                    self.recorder.record(call.name, call.arguments, safe)
+                except (OSError, ValueError):
+                    warnings.append("fixture capture failed; live observation remains valid")
             return ToolResult(
                 status=ToolStatus.OK,
                 data=safe,

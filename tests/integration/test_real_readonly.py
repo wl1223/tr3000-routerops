@@ -4,6 +4,11 @@ from pathlib import Path
 from routerops.agents import F50Agent, OpenClashAgent
 from routerops.device.discovery import CapabilityDiscovery
 from routerops.evidence import EvidenceStore
+from routerops.fixtures.store import (
+    FixtureSource,
+    ObservationFixtureRecorder,
+    ReplayRouterAdapter,
+)
 from routerops.memory import MemoryStore
 from routerops.models import FaultLayer, RunMode
 from routerops.orchestration import Supervisor
@@ -129,4 +134,28 @@ def test_real_current_state_diff(make_ssh_adapter, tmp_path: Path):
     )
     changes = supervisor.state_diff()
     assert changes["get_memory.available_mb"] == {"before": 112, "after": 80}
+
+
+def test_normalized_capture_replays_f50_diagnosis(make_ssh_adapter, tmp_path: Path):
+    adapter, _ = make_ssh_adapter()
+    recorder = ObservationFixtureRecorder(
+        tmp_path / "fixture",
+        adapter.device_id,
+        source=FixtureSource.TEST_GENERATED,
+    )
+    live_facade = ToolFacade(
+        adapter,
+        build_registry(),
+        SafetyPolicy(),
+        EvidenceStore(tmp_path / "live-evidence"),
+        RunMode.DIAGNOSE,
+        recorder=recorder,
+    )
+    live = F50Agent().diagnose(live_facade, "F50 compatibility test")
+    replay = F50Agent().diagnose(
+        real_facade(ReplayRouterAdapter(tmp_path / "fixture"), tmp_path / "replay"),
+        "F50 compatibility test",
+    )
+    assert replay.fault_layer == live.fault_layer
+    assert replay.cause == live.cause
 

@@ -47,3 +47,41 @@ def test_normalizer_redacts_raw_secrets():
     assert "wpa-secret" not in encoded
     assert "REDACTED" in encoded
 
+
+def test_openclash_unknown_paths_and_names_degrade_safely():
+    config = normalize_observation(
+        RawObservation(
+            "get_openclash_config",
+            "--PROCESS--\n123 root /usr/bin/unknown-core\n"
+            "--UCI--\n--RUNTIME-SAFE--\n",
+            "",
+            0,
+        )
+    )
+    process = normalize_observation(
+        RawObservation("get_openclash_process", "", "", 0)
+    )
+    status = normalize_observation(
+        RawObservation(
+            "get_openclash_status",
+            "--PACKAGES--\n--PROCESSES--\n",
+            "",
+            0,
+        )
+    )
+    assert config["config_location"] is None
+    assert config["run_mode"] == "unknown"
+    assert process["name"] is None
+    assert process["running"] is False
+    assert status["installed"] is False
+    assert status["running"] is False
+
+
+def test_invalid_structured_output_becomes_unavailable_observation():
+    result = normalize_observation(
+        RawObservation("get_interfaces", "not-json", "parse error", 1)
+    )
+    assert result["interfaces"] == []
+    assert result["_meta"]["available"] is False
+    assert result["_meta"]["error_code"] == "NORMALIZATION_FAILED"
+

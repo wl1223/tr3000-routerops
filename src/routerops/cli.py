@@ -7,6 +7,7 @@ import typer
 from routerops.config import Settings
 from routerops.device.discovery import CapabilityDiscovery, DeviceCapabilities
 from routerops.evidence import EvidenceStore
+from routerops.fixtures import ObservationFixtureRecorder
 from routerops.memory import MemoryStore
 from routerops.models import (
     Change,
@@ -38,6 +39,11 @@ def runtime() -> tuple[Settings, RouterBackend, ToolFacade, Supervisor]:
     settings = Settings()
     settings.ensure_directories()
     backend = build_backend(settings)
+    recorder = (
+        ObservationFixtureRecorder(settings.fixture_capture_dir, backend.device_id)
+        if settings.fixture_capture_dir is not None
+        else None
+    )
     evidence = EvidenceStore(settings.data_dir / "evidence")
     memory = MemoryStore(settings.data_dir / "routerops.sqlite3")
     facade = ToolFacade(
@@ -46,6 +52,7 @@ def runtime() -> tuple[Settings, RouterBackend, ToolFacade, Supervisor]:
         policy=SafetyPolicy(),
         evidence=evidence,
         mode=RunMode(settings.mode),
+        recorder=recorder,
     )
     supervisor = Supervisor(
         facade,

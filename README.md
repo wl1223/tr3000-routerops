@@ -89,6 +89,33 @@ The first baseline writes:
 All commands above are read-only. Phase 2 does not implement real restart, UCI mutation,
 restore, firewall change, OpenClash change, reboot, sysupgrade, or automatic healing.
 
+The fixed commands target common OpenWrt 24.x/BusyBox interfaces. QWRT R26.1.1 output
+must still be verified on the physical router. Missing optional commands such as `lsusb`,
+`curl`, or `ss` use read-only sysfs/`wget`/`uclient-fetch`/`netstat` fallbacks. Failed or
+unparseable commands produce an unavailable typed observation instead of terminating the
+diagnostic workflow.
+
+### Redacted fixture capture and replay
+
+To capture normalized observations from a real read-only session:
+
+```dotenv
+ROUTEROPS_BACKEND=ssh
+ROUTEROPS_MODE=1
+ROUTEROPS_FIXTURE_CAPTURE_DIR=var/fixtures/tr3000-readonly
+```
+
+After manually reviewing the files, replay the exact tool calls without SSH:
+
+```dotenv
+ROUTEROPS_BACKEND=replay
+ROUTEROPS_MODE=1
+ROUTEROPS_FIXTURE_REPLAY_DIR=var/fixtures/tr3000-readonly
+```
+
+Raw SSH output is never stored by this mechanism. No fabricated QWRT capture is included
+in the repository; see `fixtures/README.md`.
+
 Exercise an approved mock change:
 
 ```bash

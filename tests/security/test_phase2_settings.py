@@ -25,3 +25,16 @@ def test_ssh_profile_is_always_readonly():
     )
     assert settings.device_profile().readonly is True
 
+
+def test_fixture_capture_and_replay_remain_mode_one(tmp_path):
+    with pytest.raises(ValidationError, match="only for the SSH"):
+        Settings(backend="mock", fixture_capture_dir=tmp_path / "capture")
+    with pytest.raises(ValidationError, match="fixture replay directory"):
+        Settings(backend="replay", mode=1)
+    with pytest.raises(ValidationError, match="MODE 1"):
+        Settings(
+            backend="replay",
+            mode=4,
+            fixture_replay_dir=tmp_path / "fixture",
+        )
+

@@ -104,12 +104,19 @@ class ParamikoSSHAdapter:
             stdout_bytes = stdout.read(limit + 1)
             stderr_bytes = stderr.read(limit + 1)
             if len(stdout_bytes) > limit or len(stderr_bytes) > limit:
-                raise SSHConnectionError("SSH observation exceeded the output limit")
+                return normalize_observation(
+                    RawObservation(
+                        tool=tool,
+                        stdout="",
+                        stderr="",
+                        exit_code=254,
+                    )
+                )
             exit_code = stdout.channel.recv_exit_status()
-        except SSHConnectionError:
-            raise
         except Exception:
-            raise SSHConnectionError("SSH read-only command failed") from None
+            return normalize_observation(
+                RawObservation(tool=tool, stdout="", stderr="", exit_code=255)
+            )
         raw = RawObservation(
             tool=tool,
             stdout=stdout_bytes.decode("utf-8", errors="replace"),
