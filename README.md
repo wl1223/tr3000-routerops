@@ -2,6 +2,11 @@
 
 Safety-first AI network operations agent for a Cudy TR3000 v1 running QWRT.
 
+Phase 2.5 release-candidate status: `REAL_DEVICE_CONNECTED=false`,
+`REAL_DEVICE_VALIDATED=false`. Follow
+[`docs/PHASE_2_5_REAL_VALIDATION.md`](docs/PHASE_2_5_REAL_VALIDATION.md) for the first
+authorized read-only physical validation.
+
 Phase two supports both the stateful Mock Router and a strictly read-only Paramiko SSH
 adapter. The real adapter has no generic command method and no mutation method. It maps
 registered tools to fixed command templates, normalizes and redacts raw observations,

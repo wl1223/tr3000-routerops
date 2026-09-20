@@ -13,7 +13,10 @@ class ReadonlyCommand:
 
 
 _NO_ARGUMENT_COMMANDS = {
-    "get_system_info": "ubus call system board",
+    "get_system_info": (
+        "printf '%s\\n' '--BOARD--'; ubus call system board; "
+        "printf '%s\\n' '--UNAME-M--'; uname -m 2>/dev/null || true; exit 0"
+    ),
     "get_cpu_temp": (
         "for f in /sys/class/thermal/thermal_zone*/temp; do "
         "[ -r \"$f\" ] && printf '%s=' \"$f\" && cat \"$f\"; done; exit 0"

@@ -14,6 +14,7 @@ class RawObservation:
     stdout: str
     stderr: str
     exit_code: int
+    source: str = "real_ssh"
 
 
 class ObservationModel(BaseModel):
@@ -21,6 +22,7 @@ class ObservationModel(BaseModel):
 
 
 class SystemObservation(ObservationModel):
+    os: str
     model: str
     firmware: str
     kernel: str
@@ -99,24 +101,25 @@ def normalize_observation(raw: RawObservation) -> dict[str, Any]:
     }
     parser = parsers.get(raw.tool)
     if parser is None:
-        return _fallback(raw.tool, raw.exit_code, "NORMALIZER_NOT_REGISTERED")
+        return _fallback(raw, "NORMALIZER_NOT_REGISTERED")
     try:
         result = parser(stdout, stderr, raw.exit_code)
     except Exception:
-        return _fallback(raw.tool, raw.exit_code, "NORMALIZATION_FAILED")
+        return _fallback(raw, "NORMALIZATION_FAILED")
     safe = dict(redact(result))
-    safe["_meta"] = {
-        "available": raw.exit_code == 0,
-        "partial": raw.exit_code != 0 and bool(stdout.strip()),
-        "exit_code": raw.exit_code,
-        "error_code": None if raw.exit_code == 0 else "COMMAND_FAILED",
-    }
+    safe["_meta"] = _metadata(
+        raw,
+        available=raw.exit_code == 0,
+        partial=raw.exit_code != 0 and bool(stdout.strip()),
+        error_code=None if raw.exit_code == 0 else "COMMAND_FAILED",
+    )
     return safe
 
 
-def _fallback(tool: str, exit_code: int, error_code: str) -> dict[str, Any]:
+def _fallback(raw: RawObservation, error_code: str) -> dict[str, Any]:
     defaults: dict[str, dict[str, Any]] = {
         "get_system_info": {
+            "os": "unknown",
             "model": "unknown",
             "firmware": "unknown",
             "kernel": "unknown",
@@ -212,14 +215,51 @@ def _fallback(tool: str, exit_code: int, error_code: str) -> dict[str, Any]:
         "traceroute": {"success": False, "latency_ms": None, "status_code": None},
         "curl_test": {"success": False, "latency_ms": None, "status_code": None},
     }
-    result = dict(defaults.get(tool, {}))
-    result["_meta"] = {
-        "available": False,
-        "partial": False,
-        "exit_code": exit_code,
-        "error_code": error_code,
-    }
+    result = dict(defaults.get(raw.tool, {}))
+    result["_meta"] = _metadata(
+        raw,
+        available=False,
+        partial=False,
+        error_code=error_code,
+    )
     return result
+
+
+def _metadata(
+    raw: RawObservation,
+    *,
+    available: bool,
+    partial: bool,
+    error_code: str | None,
+) -> dict[str, Any]:
+    fallback = {
+        "get_usb_devices": "lsusb -> debugfs -> sysfs",
+        "curl_test": "curl -> wget -> uclient-fetch",
+        "test_openclash": "ss -> netstat",
+        "get_security_status": "ss -> netstat",
+    }.get(raw.tool)
+    if available:
+        reason = None
+    elif error_code == "NORMALIZATION_FAILED":
+        reason = "output_format_changed_or_unparseable"
+    elif raw.exit_code == 254:
+        reason = "output_limit_exceeded"
+    elif raw.exit_code == 255:
+        reason = "ssh_command_execution_failed"
+    elif raw.exit_code == 127:
+        reason = "command_unavailable_or_unsupported"
+    else:
+        reason = f"command_exit_status_{raw.exit_code}"
+    return {
+        "available": available,
+        "partial": partial,
+        "exit_code": raw.exit_code,
+        "error_code": error_code,
+        "reason": reason,
+        "source": raw.source,
+        "command": raw.tool,
+        "fallback": fallback,
+    }
 
 
 def _json(text: str) -> dict[str, Any]:
@@ -233,15 +273,24 @@ def _json(text: str) -> dict[str, Any]:
 
 
 def _system(text: str, _stderr: str, _code: int) -> dict[str, Any]:
-    value = _json(text)
+    if "--BOARD--" in text:
+        board_text = text.partition("--BOARD--")[2].partition("--UNAME-M--")[0].strip()
+        architecture = text.partition("--UNAME-M--")[2].strip() or "unknown"
+    else:
+        board_text = text
+        architecture = "unknown"
+    value = _json(board_text)
     release = value.get("release", {})
     if not isinstance(release, dict):
         release = {}
+    if architecture == "unknown":
+        architecture = str(value.get("architecture", value.get("system", "unknown")))
     system = SystemObservation(
+        os=str(release.get("distribution", "unknown")),
         model=str(value.get("model", "unknown")),
         firmware=str(release.get("description", release.get("version", "unknown"))),
         kernel=str(value.get("kernel", "unknown")),
-        architecture=str(value.get("system", "unknown")),
+        architecture=architecture,
         platform=str(release.get("target", value.get("board_name", "unknown"))),
         cpu=str(value.get("system", "unknown")),
     )

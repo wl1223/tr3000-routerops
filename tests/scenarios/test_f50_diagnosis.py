@@ -33,3 +33,20 @@ def test_absent_f50_never_queries_openclash(make_facade):
     assert all("openclash" not in item for item in report.evidence)
     assert "OpenClash" not in report.cause
 
+
+def test_f50_layer_order(make_facade):
+    _, facade = make_facade("healthy")
+    report = F50Agent().diagnose(facade, "F50 layer order")
+    observed = [item.split(":", 1)[0] for item in report.evidence]
+    assert observed == [
+        "get_usb_devices",
+        "get_usb_network_devices",
+        "get_interfaces",
+        "get_dhcp",
+        "get_routes",
+        "ping",
+        "get_dns",
+        "test_openclash",
+        "get_vps_status",
+    ]
+

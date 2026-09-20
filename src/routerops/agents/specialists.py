@@ -58,7 +58,10 @@ class OpenClashAgent(SpecialistAgent):
         test = results["test_openclash"].data
         logs = results["get_openclash_logs"].data.get("lines", [])
         oom = memory.get("oom_events", [])
-        if not status.get("_meta", {}).get("available", True):
+        if (
+            results["get_openclash_status"].status != ToolStatus.OK
+            or not status.get("_meta", {}).get("available", True)
+        ):
             cause = "OpenClash 只读发现命令在当前固件上不可用或输出无法解析"
             recommendation = "保存脱敏 fixture，确认 QWRT 实际包管理器、进程和服务输出"
             confidence = 0.98
@@ -121,7 +124,14 @@ class F50Agent:
             result = context.call(name)
             if result.status != ToolStatus.OK:
                 evidence.append(f"{name}: 工具失败 ({result.error})")
-                return {}
+                return {
+                    "_meta": {
+                        "available": False,
+                        "reason": result.error or "tool_error",
+                        "source": "tool_facade",
+                        "command": name,
+                    }
+                }
             evidence.append(f"{name}: {result.evidence_ref}")
             return result.data
 
@@ -197,8 +207,8 @@ class F50Agent:
                 ["get_usb_network_devices", "get_interfaces", "get_usb_logs"],
                 "Linux ip link 中出现 F50 对应接口",
             )
+        dhcp = observe("get_dhcp")
         if not any(item.get("ipv4") for item in f50_interfaces):
-            dhcp = observe("get_dhcp")
             return self._report(
                 problem,
                 "F50 网络接口存在，但没有 IPv4 地址",

@@ -72,6 +72,15 @@ def test_real_baseline_generation_is_sanitized(make_ssh_adapter, tmp_path: Path)
     )
     assert len(digest) == 64
     assert snapshot["get_system_info"]["kernel"] == "6.6.121"
+    assert snapshot["source"] == {
+        "type": "real_device",
+        "device": "Cudy TR3000 v1",
+        "firmware": "QWRT R26.1.1",
+        "mode": "readonly",
+        "backend": "ParamikoSSHAdapter",
+        "real_device_connected": True,
+        "real_device_validated": False,
+    }
     for name in (
         "TR3000_BASELINE.json",
         "CURRENT_STATE.json",
@@ -158,4 +167,30 @@ def test_normalized_capture_replays_f50_diagnosis(make_ssh_adapter, tmp_path: Pa
     )
     assert replay.fault_layer == live.fault_layer
     assert replay.cause == live.cause
+
+
+def test_missing_openclash_evidence_is_unknown_not_unsupported(
+    make_ssh_adapter, tmp_path: Path
+):
+    adapter, _ = make_ssh_adapter(
+        {
+            "get_openclash_status": ("--PACKAGES--\n--PROCESSES--\n", "", 0),
+            "get_openclash_version": ("--PACKAGES--\n--PROCESSES--\n", "", 0),
+            "get_openclash_process": ("", "", 0),
+            "get_openclash_config": (
+                "--PROCESS--\n--UCI--\n--RUNTIME-SAFE--\n",
+                "",
+                0,
+            ),
+        }
+    )
+    capabilities = CapabilityDiscovery().discover(
+        real_facade(adapter, tmp_path),
+        adapter.device_id,
+        "Cudy TR3000 v1",
+        "QWRT R26.1.1",
+    )
+    openclash = capabilities.capabilities["openclash"]
+    assert openclash.available is None
+    assert openclash.confidence == "unknown"
 

@@ -13,6 +13,11 @@ class SSHConnectionError(RuntimeError):
     pass
 
 
+class HostKeyMismatchError(SSHConnectionError):
+    def __init__(self) -> None:
+        super().__init__("HOST_KEY_MISMATCH")
+
+
 def _fingerprint(key: paramiko.PKey) -> str:
     digest = hashlib.sha256(key.asbytes()).digest()
     return base64.b64encode(digest).decode().rstrip("=")
@@ -27,7 +32,7 @@ class _PinnedHostKeyPolicy(paramiko.MissingHostKeyPolicy):
     ) -> None:
         del client, hostname
         if _fingerprint(key) != self.expected:
-            raise paramiko.SSHException("host key verification failed")
+            raise HostKeyMismatchError()
 
 
 class ParamikoSSHAdapter:
@@ -78,14 +83,17 @@ class ParamikoSSHAdapter:
             client.connect(**kwargs)
             transport = client.get_transport()
             if transport is None or not transport.is_active():
-                raise SSHConnectionError("SSH transport is not active")
+                raise SSHConnectionError("SSH_CONNECTION_FAILED")
             if _fingerprint(transport.get_remote_server_key()) != expected.removeprefix(
                 "SHA256:"
             ).rstrip("="):
-                raise SSHConnectionError("SSH host key verification failed")
+                raise HostKeyMismatchError()
+        except (HostKeyMismatchError, paramiko.BadHostKeyException):
+            client.close()
+            raise HostKeyMismatchError() from None
         except Exception:
             client.close()
-            raise SSHConnectionError("SSH connection failed") from None
+            raise SSHConnectionError("SSH_CONNECTION_FAILED") from None
         self._client = client
 
     def execute_readonly(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

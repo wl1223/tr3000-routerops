@@ -27,6 +27,11 @@ from routerops.tools.backends import (
     RouterBackend,
     build_backend,
 )
+from routerops.tools.backends.ssh import (
+    HostKeyMismatchError,
+    ParamikoSSHAdapter,
+    SSHConnectionError,
+)
 
 app = typer.Typer(help="TR3000 RouterOps safety-first network agent")
 device_app = typer.Typer(help="Read-only device discovery and state capture")
@@ -63,10 +68,37 @@ def runtime() -> tuple[Settings, RouterBackend, ToolFacade, Supervisor]:
     return settings, backend, facade, supervisor
 
 
+def _ensure_backend_connection(backend: RouterBackend) -> None:
+    if not isinstance(backend, ParamikoSSHAdapter):
+        return
+    try:
+        backend.connect()
+    except HostKeyMismatchError:
+        raise typer.BadParameter("HOST_KEY_MISMATCH") from None
+    except SSHConnectionError:
+        raise typer.BadParameter("SSH_CONNECTION_FAILED") from None
+
+
 @app.command()
 def status() -> None:
     """Show the enforced execution boundary."""
     settings, backend, facade, _ = runtime()
+    specs = facade.registry.specs()
+    backend_allowlist = getattr(backend, "allowed_tools", None)
+    enabled_tools = [
+        item.name
+        for item in specs
+        if (
+            not backend.readonly
+            or (
+                item.risk == RiskLevel.READ_ONLY
+                and (
+                    backend_allowlist is None
+                    or item.name in backend_allowlist
+                )
+            )
+        )
+    ]
     typer.echo(
         json.dumps(
             {
@@ -75,7 +107,18 @@ def status() -> None:
                 "scenario": settings.scenario,
                 "real_ssh_enabled": settings.backend == "ssh",
                 "real_device_readonly": backend.readonly,
-                "registered_tools": [item.name for item in facade.registry.specs()],
+                "enabled_tools": enabled_tools,
+                "real_device_invariants": {
+                    "mutation_tools": 0 if backend.readonly else None,
+                    "write_capability": False if backend.readonly else None,
+                    "generic_shell": False,
+                    "auto_repair": False,
+                    "restart": False if backend.readonly else None,
+                    "reboot": False,
+                    "uci_write": False if backend.readonly else None,
+                    "sysupgrade": False,
+                    "restore": False if backend.readonly else None,
+                },
             },
             ensure_ascii=False,
             indent=2,
@@ -86,7 +129,8 @@ def status() -> None:
 @app.command()
 def baseline() -> None:
     """Capture a TR3000 baseline using read-only tools."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     _, digest = supervisor.capture_state(baseline=True)
     typer.echo(f"TR3000_BASELINE.json created (sha256={digest})")
 
@@ -94,7 +138,8 @@ def baseline() -> None:
 @app.command("current-state")
 def current_state() -> None:
     """Capture current state."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     _, digest = supervisor.capture_state(baseline=False)
     typer.echo(f"CURRENT_STATE.json created (sha256={digest})")
 
@@ -102,7 +147,8 @@ def current_state() -> None:
 @app.command("state-diff")
 def state_diff() -> None:
     """Compare current state with the baseline."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     typer.echo(json.dumps(supervisor.state_diff(), ensure_ascii=False, indent=2))
 
 
@@ -111,7 +157,8 @@ def diagnose_f50(
     problem: Annotated[str, typer.Argument()] = "F50启动后TR3000无法自动识别。",
 ) -> None:
     """Compatibility alias for `routerops diagnose f50`."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     typer.echo(supervisor.diagnose_f50(problem).chinese_sections())
 
 
@@ -134,6 +181,7 @@ def _discover(
 def device_probe() -> None:
     """Discover real capabilities without assuming paths or service names."""
     settings, backend, facade, _ = runtime()
+    _ensure_backend_connection(backend)
     capabilities = _discover(settings, backend, facade)
     facade.evidence.snapshot(
         settings.data_dir / "devices" / "tr3000" / "capabilities.json",
@@ -146,6 +194,7 @@ def device_probe() -> None:
 def device_baseline() -> None:
     """Create baseline, current state, and capability files in one read-only run."""
     settings, backend, facade, supervisor = runtime()
+    _ensure_backend_connection(backend)
     capabilities = _discover(settings, backend, facade)
     _, digest = supervisor.capture_device_baseline(
         capabilities.model_dump(mode="json")
@@ -168,7 +217,8 @@ def device_baseline() -> None:
 @device_app.command("status")
 def device_status() -> None:
     """Capture CURRENT_STATE and current.json using read-only tools."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     _, digest = supervisor.capture_state(baseline=False)
     typer.echo(
         json.dumps(
@@ -184,7 +234,8 @@ def diagnose_f50_nested(
     problem: Annotated[str, typer.Argument()] = "F50启动后TR3000无法自动识别。",
 ) -> None:
     """Diagnose F50 from USB enumeration through VPS/Internet."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     typer.echo(supervisor.diagnose_f50(problem).chinese_sections())
 
 
@@ -193,7 +244,8 @@ def diagnose_openclash(
     problem: Annotated[str, typer.Argument()] = "检查 OpenClash 当前状态",
 ) -> None:
     """Discover and diagnose OpenClash without modifying it."""
-    _, _, _, supervisor = runtime()
+    _, backend, _, supervisor = runtime()
+    _ensure_backend_connection(backend)
     typer.echo(supervisor.diagnose_openclash(problem).chinese_sections())
 
 

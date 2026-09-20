@@ -29,6 +29,8 @@ def test_fixture_round_trip_is_readonly_and_redacted(tmp_path: Path):
     persisted = (root / next(name for name in recorder.manifest.records)).read_text()
     assert "fixture-secret" not in persisted
     assert "REDACTED" in persisted
+    assert recorder.manifest.source.type == FixtureSource.TEST_GENERATED
+    assert recorder.manifest.source.is_device_evidence is False
 
     adapter = ReplayRouterAdapter(root)
     assert adapter.readonly

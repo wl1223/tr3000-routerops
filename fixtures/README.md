@@ -20,7 +20,8 @@ ROUTEROPS_BACKEND=replay
 ROUTEROPS_FIXTURE_REPLAY_DIR=var/fixtures/tr3000-readonly
 ```
 
-Every fixture includes `source`, `redacted=true`, hashes, capture time, exact tool
+Every fixture includes structured `source`, `redacted=true`, hashes, capture time, exact tool
 arguments, and normalized observation data. Test-generated fixtures are explicitly
-labelled `test-generated-not-qwrt-evidence` and must not be treated as device evidence.
+labelled `type=test_generated, is_device_evidence=false`; real captures use
+`type=real_device, is_device_evidence=true`.
 
