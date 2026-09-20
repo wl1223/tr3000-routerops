@@ -1,0 +1,25 @@
+{
+  "id": "openclash-official-diagnostics",
+  "title": "OpenClash diagnostic boundaries",
+  "source_url": "https://github.com/vernesong/OpenClash/blob/dev/.github/skills/openclash-user-guide/14-diagnostics.md",
+  "source_type": "official-project-documentation",
+  "source_version": "dev branch, retrieved 2026-09-20",
+  "retrieved_at": "2026-09-20",
+  "published_at": null,
+  "applicability": {
+    "device": "OpenWrt-compatible router",
+    "model": "Cudy TR3000 v1",
+    "hardware": "mediatek/mt798x, 256MB RAM",
+    "firmware": "unknown/read-only-reference",
+    "kernel": "unknown"
+  },
+  "confidence": 0.8,
+  "limitations": [
+    "Not validated against QWRT R26.1.1",
+    "No configuration path, service name, or interface name may be assumed"
+  ],
+  "review_after": "2026-12-20",
+  "content_hash": "d03ed443eba009bdcbedc870679771af73e9f5e851c8a51689e48a53c10b6d0f",
+  "body": "OpenClash diagnostics must inspect plugin state, core state, generated runtime configuration, DNS, firewall, routes, and logs separately. Paths and interface names must be discovered from the device."
+}
+

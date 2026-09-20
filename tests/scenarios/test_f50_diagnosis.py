@@ -1,0 +1,52 @@
+import pytest
+
+from routerops.agents import F50Agent
+from routerops.models import FaultLayer
+
+
+@pytest.mark.parametrize(
+    ("scenario", "layer"),
+    [
+        ("f50_absent", FaultLayer.L1_USB_DRIVER),
+        ("f50_no_driver", FaultLayer.L1_USB_DRIVER),
+        ("f50_netdev_missing", FaultLayer.L2_LINUX),
+        ("f50_no_dhcp", FaultLayer.L4_DHCP_NAT_FIREWALL),
+        ("f50_no_route", FaultLayer.L3_NETWORK),
+        ("internet_failure", FaultLayer.L4_DHCP_NAT_FIREWALL),
+        ("dns_failure", FaultLayer.L5_DNS),
+        ("openclash_failure", FaultLayer.L6_OPENCLASH),
+        ("vps_failure", FaultLayer.L7_VPS),
+        ("healthy", FaultLayer.L8_INTERNET),
+    ],
+)
+def test_f50_diagnostic_layer(make_facade, scenario, layer):
+    _, facade = make_facade(scenario)
+    report = F50Agent().diagnose(facade, "F50启动后TR3000无法自动识别")
+    assert report.fault_layer == layer
+    assert report.evidence
+    assert "只读" in report.risk
+
+
+def test_absent_f50_never_queries_openclash(make_facade):
+    _, facade = make_facade("f50_absent")
+    report = F50Agent().diagnose(facade, "F50无法联网")
+    assert all("openclash" not in item for item in report.evidence)
+    assert "OpenClash" not in report.cause
+
+
+def test_f50_layer_order(make_facade):
+    _, facade = make_facade("healthy")
+    report = F50Agent().diagnose(facade, "F50 layer order")
+    observed = [item.split(":", 1)[0] for item in report.evidence]
+    assert observed == [
+        "get_usb_devices",
+        "get_usb_network_devices",
+        "get_interfaces",
+        "get_dhcp",
+        "get_routes",
+        "ping",
+        "get_dns",
+        "test_openclash",
+        "get_vps_status",
+    ]
+

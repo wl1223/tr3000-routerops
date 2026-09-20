@@ -1,0 +1,15 @@
+{
+  "usb": {
+    "devices": [],
+    "logs": ["usb 2-1: device descriptor read/64, error -71"],
+    "network_devices": []
+  },
+  "f50": {
+    "usb_present": false,
+    "driver": null,
+    "interface": null,
+    "address": null,
+    "gateway": null
+  }
+}
+
