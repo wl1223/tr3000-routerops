@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     def validate_phase_two_boundary(self) -> "Settings":
         if self.backend in {"ssh", "replay"} and self.mode != 1:
             raise ValueError("real SSH and fixture replay are restricted to MODE 1")
-        if self.backend == "ssh":
-            if not self.ssh_host or self.ssh_host_key_sha256 is None:
-                raise ValueError("SSH backend requires host and pinned host-key SHA256")
+        if self.backend == "ssh" and (
+            not self.ssh_host or self.ssh_host_key_sha256 is None
+        ):
+            raise ValueError("SSH backend requires host and pinned host-key SHA256")
         if self.fixture_capture_dir is not None and self.backend != "ssh":
             raise ValueError("fixture capture is available only for the SSH backend")
         if self.backend == "replay" and self.fixture_replay_dir is None:
