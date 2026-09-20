@@ -1,6 +1,5 @@
 import json
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 import typer

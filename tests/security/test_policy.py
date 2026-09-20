@@ -7,6 +7,16 @@ def test_mode_one_denies_service_restart(make_facade):
     assert result.status == ToolStatus.DENIED
 
 
+def test_level_one_requires_notification(make_facade):
+    _, facade = make_facade(mode=RunMode.SEMI_AUTO)
+    denied = facade.invoke(ToolCall(name="restart_dns", workflow_id="wf"))
+    allowed = facade.invoke(
+        ToolCall(name="restart_dns", workflow_id="wf", user_notified=True)
+    )
+    assert denied.status == ToolStatus.DENIED
+    assert allowed.status == ToolStatus.OK
+
+
 def test_arbitrary_probe_target_is_denied(make_facade):
     _, facade = make_facade()
     result = facade.invoke(

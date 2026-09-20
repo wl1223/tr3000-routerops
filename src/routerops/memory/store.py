@@ -40,7 +40,11 @@ class MemoryStore:
     def save_approval(self, approval_id: str, payload: dict[str, Any]) -> None:
         self.connection.execute(
             "INSERT OR REPLACE INTO approvals(approval_id, payload, approved) VALUES (?, ?, ?)",
-            (approval_id, json.dumps(redact(payload), default=str), int(payload.get("approved", False))),
+            (
+                approval_id,
+                json.dumps(redact(payload), default=str),
+                int(payload.get("approved", False)),
+            ),
         )
         self.connection.commit()
 

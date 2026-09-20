@@ -68,6 +68,10 @@ class Supervisor:
 
     def diagnose_f50(self, problem: str) -> DiagnosticReport:
         report = F50Agent().diagnose(self.facade, problem)
-        self.memory.event(f"diagnosis-{uuid.uuid4().hex[:12]}", "diagnostic_report", report.model_dump())
+        self.memory.event(
+            f"diagnosis-{uuid.uuid4().hex[:12]}",
+            "diagnostic_report",
+            report.model_dump(),
+        )
         return report
 

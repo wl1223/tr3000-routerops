@@ -1,5 +1,6 @@
 import copy
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ class MockRouterBackend:
     def execute(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self.state.get("faults", {}).get(f"error_{tool}"):
             raise RuntimeError(f"injected failure for {tool}")
-        handlers = {
+        handlers: dict[str, Callable[[], dict[str, Any]]] = {
             "get_system_info": lambda: self.state["system"],
             "get_cpu_temp": lambda: {"celsius": self.state["system"]["temperature_c"]},
             "get_memory": lambda: self.state["memory"],
@@ -73,7 +74,8 @@ class MockRouterBackend:
 
     def _probe(self, kind: str, arguments: dict[str, Any]) -> dict[str, Any]:
         target = str(arguments.get("target", ""))
-        probe = self.state.get("probes", {}).get(target, self.state.get("probes", {}).get("default"))
+        probes = self.state.get("probes", {})
+        probe = probes.get(target, probes.get("default"))
         return {"probe": kind, "target": target, **(probe or {"success": False})}
 
     def _uci_get(self, arguments: dict[str, Any]) -> dict[str, Any]:

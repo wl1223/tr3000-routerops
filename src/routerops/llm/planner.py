@@ -1,6 +1,6 @@
 import json
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAI
 
@@ -56,11 +56,8 @@ class OpenAICompatiblePlanner:
                 "function": {
                     "name": spec.name,
                     "description": spec.description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": True,
-                    },
+                    "parameters": spec.input_schema,
+                    "strict": True,
                 },
             }
             for spec in self.registry.specs()
@@ -69,8 +66,8 @@ class OpenAICompatiblePlanner:
         for _ in range(self.max_iterations):
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=tools,  # type: ignore[arg-type]
+                messages=cast(Any, messages),
+                tools=cast(Any, tools),
                 tool_choice="auto",
                 temperature=0,
             )
@@ -79,6 +76,8 @@ class OpenAICompatiblePlanner:
                 return message.content or ""
             messages.append(message.model_dump(exclude_none=True))
             for call in message.tool_calls:
+                if call.type != "function":
+                    raise RuntimeError("model requested an unsupported custom tool")
                 try:
                     arguments = json.loads(call.function.arguments)
                 except json.JSONDecodeError:

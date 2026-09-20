@@ -1,5 +1,64 @@
 from routerops.models import RiskLevel, RunMode, ToolSpec
 
+NO_ARGUMENTS: dict[str, object] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}
+
+
+def input_schema(name: str) -> dict[str, object]:
+    if name in {"ping", "traceroute", "curl_test"}:
+        return {
+            "type": "object",
+            "properties": {
+                "target": {
+                    "type": "string",
+                    "enum": [
+                        "1.1.1.1",
+                        "www.cloudflare.com",
+                        "connectivitycheck.gstatic.com",
+                    ],
+                }
+            },
+            "required": ["target"],
+            "additionalProperties": False,
+        }
+    if name == "uci_get":
+        return {
+            "type": "object",
+            "properties": {
+                key: {"type": "string", "pattern": "^[A-Za-z0-9_@-]{1,64}$"}
+                for key in ("package", "section", "option")
+            },
+            "required": ["package"],
+            "additionalProperties": False,
+        }
+    if name == "uci_set":
+        properties = {
+            key: {"type": "string", "maxLength": 2048}
+            for key in ("package", "section", "option", "value")
+        }
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+    if name in {"backup_config", "restore_backup"}:
+        return {
+            "type": "object",
+            "properties": {
+                "backup_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_@-]{1,64}$",
+                }
+            },
+            "required": ["backup_id"],
+            "additionalProperties": False,
+        }
+    return dict(NO_ARGUMENTS)
+
 
 class ToolRegistry:
     def __init__(self) -> None:
@@ -65,6 +124,7 @@ def build_registry() -> ToolRegistry:
                     risk=RiskLevel.READ_ONLY,
                     min_mode=RunMode.DIAGNOSE,
                     capability=capability,
+                    input_schema=input_schema(name),
                 )
             )
     for name in ("restart_openclash", "restart_dns"):
@@ -75,6 +135,7 @@ def build_registry() -> ToolRegistry:
                 risk=RiskLevel.LOW,
                 min_mode=RunMode.SEMI_AUTO,
                 capability="service",
+                input_schema=input_schema(name),
             )
         )
     registry.register(
@@ -84,6 +145,7 @@ def build_registry() -> ToolRegistry:
             risk=RiskLevel.READ_ONLY,
             min_mode=RunMode.ADVISE,
             capability="backup",
+            input_schema=input_schema("backup_config"),
         )
     )
     for name in ("restore_backup", "uci_set", "restart_network"):
@@ -94,6 +156,7 @@ def build_registry() -> ToolRegistry:
                 risk=RiskLevel.HIGH,
                 min_mode=RunMode.MAINTENANCE,
                 capability="change",
+                input_schema=input_schema(name),
             )
         )
     registry.register(
@@ -103,6 +166,7 @@ def build_registry() -> ToolRegistry:
             risk=RiskLevel.READ_ONLY,
             min_mode=RunMode.DIAGNOSE,
             capability="backup",
+            input_schema=input_schema("list_backups"),
         )
     )
     return registry

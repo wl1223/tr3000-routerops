@@ -66,6 +66,7 @@ class ToolSpec(StrictModel):
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     max_output_bytes: int = Field(default=65536, ge=256, le=1048576)
     capability: str
+    input_schema: dict[str, Any]
 
 
 class ToolCall(StrictModel):
@@ -73,6 +74,7 @@ class ToolCall(StrictModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     workflow_id: str
     approval_id: str | None = None
+    user_notified: bool = False
 
 
 class ToolResult(StrictModel):
@@ -106,6 +108,8 @@ class ApprovalRequest(StrictModel):
     approval_id: str
     plan_hash: str
     baseline_hash: str
+    backup_id: str
+    authorized_actions: list[str]
     tool_schema_version: str
     expires_at: datetime
     approved: bool = False

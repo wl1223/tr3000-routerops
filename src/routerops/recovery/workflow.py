@@ -1,7 +1,8 @@
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from routerops.evidence.store import content_hash
 from routerops.models import (
@@ -40,7 +41,11 @@ class ChangeWorkflow:
         baseline_hash = content_hash(self._snapshot)
         backup_id = f"backup-{uuid.uuid4().hex[:12]}"
         result = self.facade.invoke(
-            ToolCall(name="backup_config", arguments={"backup_id": backup_id}, workflow_id=plan.workflow_id)
+            ToolCall(
+                name="backup_config",
+                arguments={"backup_id": backup_id},
+                workflow_id=plan.workflow_id,
+            )
         )
         if result.status != ToolStatus.OK:
             self.state = WorkflowState.FAILED_SAFE
@@ -55,7 +60,7 @@ class ChangeWorkflow:
             content_hash=baseline_hash,
             path=str(path),
         )
-        request = self.approvals.request(plan, baseline_hash)
+        request = self.approvals.request(plan, baseline_hash, backup_id)
         self.state = WorkflowState.WAITING_APPROVAL
         return artifact, request
 
@@ -69,7 +74,9 @@ class ChangeWorkflow:
         if not approval.approved:
             raise SafetyError("change request is not approved")
         current_hash = content_hash(self.backend.snapshot())
-        expected_hash = self.approvals.plan_hash(plan, artifact.content_hash)
+        expected_hash = self.approvals.plan_hash(
+            plan, artifact.content_hash, artifact.backup_id
+        )
         if current_hash != artifact.content_hash or approval.plan_hash != expected_hash:
             raise SafetyError("plan or router state changed after preview")
         self.state = WorkflowState.EXECUTING

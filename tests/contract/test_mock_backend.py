@@ -16,3 +16,9 @@ def test_mock_implements_all_read_tools():
             result = backend.execute(spec.name, exceptions.get(spec.name, {}))
             assert isinstance(result, dict), spec.name
 
+
+def test_tool_schemas_are_closed():
+    for spec in build_registry().specs():
+        assert spec.input_schema["type"] == "object"
+        assert spec.input_schema["additionalProperties"] is False
+

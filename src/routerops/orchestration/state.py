@@ -3,7 +3,11 @@ from routerops.models import WorkflowState
 TRANSITIONS: dict[WorkflowState, set[WorkflowState]] = {
     WorkflowState.RECEIVED: {WorkflowState.DISCOVERY, WorkflowState.FAILED_SAFE},
     WorkflowState.DISCOVERY: {WorkflowState.DIAGNOSIS, WorkflowState.FAILED_SAFE},
-    WorkflowState.DIAGNOSIS: {WorkflowState.PLAN, WorkflowState.SUCCEEDED, WorkflowState.FAILED_SAFE},
+    WorkflowState.DIAGNOSIS: {
+        WorkflowState.PLAN,
+        WorkflowState.SUCCEEDED,
+        WorkflowState.FAILED_SAFE,
+    },
     WorkflowState.PLAN: {WorkflowState.POLICY_CHECK, WorkflowState.FAILED_SAFE},
     WorkflowState.POLICY_CHECK: {
         WorkflowState.WAITING_APPROVAL,

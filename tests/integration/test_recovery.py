@@ -7,6 +7,8 @@ from routerops.models import (
     ChangePlan,
     RiskLevel,
     RunMode,
+    ToolCall,
+    ToolStatus,
     VerificationResult,
     WorkflowState,
 )
@@ -79,4 +81,58 @@ def test_tampered_plan_invalidates_approval(make_facade, tmp_path: Path):
     change.changes[0].new_value = "9999"
     with pytest.raises(SafetyError, match="changed"):
         approvals.approve(request, change, artifact.content_hash)
+
+
+def test_approval_cannot_authorize_different_write(make_facade, tmp_path: Path):
+    backend, facade = make_facade(mode=RunMode.MAINTENANCE)
+    change = plan(backend.device_id)
+    approvals = ApprovalService()
+    workflow = ChangeWorkflow(backend, facade, approvals, tmp_path / "backups")
+    artifact, request = workflow.prepare(change)
+    approved = approvals.approve(request, change, artifact.content_hash)
+    result = facade.invoke(
+        ToolCall(
+            name="uci_set",
+            arguments={
+                "package": "network",
+                "section": "wan",
+                "option": "proto",
+                "value": "static",
+            },
+            workflow_id=change.workflow_id,
+            approval_id=approved.approval_id,
+        ),
+        approved,
+    )
+    assert result.status == ToolStatus.DENIED
+    assert "outside" in (result.error or "")
+
+
+def test_backup_failure_stops_before_approval(make_facade, tmp_path: Path):
+    backend, facade = make_facade(mode=RunMode.MAINTENANCE)
+    backend.state["faults"]["error_backup_config"] = True
+    workflow = ChangeWorkflow(
+        backend, facade, ApprovalService(), tmp_path / "backups"
+    )
+    with pytest.raises(SafetyError, match="backup failed"):
+        workflow.prepare(plan(backend.device_id))
+    assert workflow.state == WorkflowState.FAILED_SAFE
+
+
+def test_rollback_failure_enters_failed_safe(make_facade, tmp_path: Path):
+    backend, facade = make_facade("rollback_failure", RunMode.MAINTENANCE)
+    change = plan(backend.device_id)
+    approvals = ApprovalService()
+    workflow = ChangeWorkflow(backend, facade, approvals, tmp_path / "backups")
+    artifact, request = workflow.prepare(change)
+    approved = approvals.approve(request, change, artifact.content_hash)
+    result = workflow.execute(
+        change,
+        artifact,
+        approved,
+        lambda: VerificationResult(success=False, checks={"probe": False}, message="failed"),
+    )
+    assert not result.success
+    assert not result.checks["rollback"]
+    assert workflow.state == WorkflowState.FAILED_SAFE
 

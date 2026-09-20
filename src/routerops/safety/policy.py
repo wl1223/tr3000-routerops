@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 import re
 import uuid
@@ -24,15 +25,20 @@ class SafetyPolicy:
         mode: RunMode,
         arguments: dict[str, Any],
         approval: ApprovalRequest | None,
+        user_notified: bool,
     ) -> None:
         if mode < spec.min_mode:
             raise SafetyError(f"{spec.name} requires mode {int(spec.min_mode)}")
         self.validate_arguments(spec.name, arguments)
+        if spec.risk == RiskLevel.LOW and not user_notified:
+            raise SafetyError("user notification required before low-risk action")
         if spec.risk == RiskLevel.HIGH:
             if approval is None or not approval.approved:
-                raise SafetyError("high-risk tool requires an approved, unexpired change request")
+                raise SafetyError("approval required for high-risk tool")
             if approval.expires_at <= datetime.now(UTC):
                 raise SafetyError("approval has expired")
+            if self.action_hash(spec.name, arguments) not in approval.authorized_actions:
+                raise SafetyError("tool call is outside the approved change plan")
 
     def validate_arguments(self, tool: str, arguments: dict[str, Any]) -> None:
         if tool.startswith("uci_") and tool not in {"uci_diff"}:
@@ -53,31 +59,60 @@ class SafetyPolicy:
                 raise SafetyError("probe accepts only a target")
             if str(arguments.get("target", "")) not in SAFE_PROBE_DOMAINS:
                 raise SafetyError("probe target is not allowlisted")
-        if tool in {"restore_backup", "backup_config"}:
-            if set(arguments) != {"backup_id"} or not UCI_NAME.fullmatch(
-                str(arguments.get("backup_id", ""))
-            ):
-                raise SafetyError("invalid backup id")
+        if tool in {"restore_backup", "backup_config"} and (
+            set(arguments) != {"backup_id"}
+            or not UCI_NAME.fullmatch(str(arguments.get("backup_id", "")))
+        ):
+            raise SafetyError("invalid backup id")
+
+    @staticmethod
+    def action_hash(tool: str, arguments: dict[str, Any]) -> str:
+        return content_hash({"tool": tool, "arguments": arguments})
 
 
 class ApprovalService:
     schema_version = "1.0"
 
     @staticmethod
-    def plan_hash(plan: ChangePlan, baseline_hash: str) -> str:
+    def authorized_actions(plan: ChangePlan, backup_id: str) -> list[str]:
+        actions = [
+            SafetyPolicy.action_hash(
+                "uci_set",
+                {
+                    "package": change.package,
+                    "section": change.section,
+                    "option": change.option,
+                    "value": change.new_value,
+                },
+            )
+            for change in plan.changes
+        ]
+        actions.append(SafetyPolicy.action_hash("restore_backup", {"backup_id": backup_id}))
+        return sorted(actions)
+
+    @staticmethod
+    def plan_hash(plan: ChangePlan, baseline_hash: str, backup_id: str) -> str:
+        actions = ApprovalService.authorized_actions(plan, backup_id)
         payload = {
             "plan": plan.model_dump(mode="json"),
             "baseline_hash": baseline_hash,
+            "backup_id": backup_id,
+            "authorized_actions": actions,
             "tool_schema_version": ApprovalService.schema_version,
         }
         return content_hash(payload)
 
-    def request(self, plan: ChangePlan, baseline_hash: str) -> ApprovalRequest:
-        digest = self.plan_hash(plan, baseline_hash)
+    def request(
+        self, plan: ChangePlan, baseline_hash: str, backup_id: str
+    ) -> ApprovalRequest:
+        actions = self.authorized_actions(plan, backup_id)
+        digest = self.plan_hash(plan, baseline_hash, backup_id)
         return ApprovalRequest(
             approval_id=f"approval-{uuid.uuid4().hex[:12]}",
             plan_hash=digest,
             baseline_hash=baseline_hash,
+            backup_id=backup_id,
+            authorized_actions=actions,
             tool_schema_version=self.schema_version,
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
         )
@@ -85,9 +120,12 @@ class ApprovalService:
     def approve(
         self, request: ApprovalRequest, plan: ChangePlan, baseline_hash: str
     ) -> ApprovalRequest:
-        expected = self.plan_hash(plan, baseline_hash)
-        if not hashlib.compare_digest(request.plan_hash, expected):
+        expected = self.plan_hash(plan, baseline_hash, request.backup_id)
+        if not hmac.compare_digest(request.plan_hash, expected):
             raise SafetyError("plan or baseline changed after approval request")
+        expected_actions = self.authorized_actions(plan, request.backup_id)
+        if request.authorized_actions != expected_actions:
+            raise SafetyError("authorized tool calls changed after approval request")
         if request.expires_at <= datetime.now(UTC):
             raise SafetyError("approval request expired")
         return request.model_copy(update={"approved": True})

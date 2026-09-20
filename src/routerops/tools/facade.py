@@ -1,6 +1,5 @@
 import json
 import threading
-from typing import Any
 
 from routerops.evidence import EvidenceStore
 from routerops.models import ApprovalRequest, RunMode, ToolCall, ToolResult, ToolStatus
@@ -31,7 +30,13 @@ class ToolFacade:
     ) -> ToolResult:
         try:
             spec = self.registry.get(call.name)
-            self.policy.authorize(spec, self.mode, call.arguments, approval)
+            self.policy.authorize(
+                spec,
+                self.mode,
+                call.arguments,
+                approval,
+                call.user_notified,
+            )
             lock = self._write_lock if spec.risk.value > 0 else _NullLock()
             with lock:
                 raw = self.backend.execute(call.name, call.arguments)
