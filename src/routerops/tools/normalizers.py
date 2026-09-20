@@ -344,8 +344,15 @@ def _openclash_status(text: str, _stderr: str, code: int) -> dict[str, Any]:
 
 
 def _openclash_version(text: str, _stderr: str, _code: int) -> dict[str, Any]:
-    packages = [line for line in text.splitlines() if re.search(r"(?i)openclash|mihomo|clash", line)]
-    return {"plugin": packages[0] if packages else None, "core": packages[1] if len(packages) > 1 else None}
+    packages = [
+        line
+        for line in text.splitlines()
+        if re.search(r"(?i)openclash|mihomo|clash", line)
+    ]
+    return {
+        "plugin": packages[0] if packages else None,
+        "core": packages[1] if len(packages) > 1 else None,
+    }
 
 
 def _openclash_process(text: str, _stderr: str, _code: int) -> dict[str, Any]:

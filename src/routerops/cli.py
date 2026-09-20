@@ -59,7 +59,7 @@ def runtime() -> tuple[Settings, RouterBackend, ToolFacade, Supervisor]:
 @app.command()
 def status() -> None:
     """Show the enforced execution boundary."""
-    settings, _, facade, _ = runtime()
+    settings, backend, facade, _ = runtime()
     typer.echo(
         json.dumps(
             {

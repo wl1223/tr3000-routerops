@@ -25,6 +25,7 @@ dev = [
   "pytest",
   "pytest-asyncio",
   "ruff",
+  "types-paramiko",
 ]
 
 [project.scripts]

@@ -54,7 +54,8 @@ _NO_ARGUMENT_COMMANDS = {
     ),
     "get_openclash_status": (
         "printf '%s\\n' '--PACKAGES--'; "
-        "(opkg list-installed 2>/dev/null || apk info 2>/dev/null) | grep -Ei 'openclash|mihomo|clash'; "
+        "(opkg list-installed 2>/dev/null || apk info 2>/dev/null) | "
+        "grep -Ei 'openclash|mihomo|clash'; "
         "printf '%s\\n' '--PROCESSES--'; ps w | grep -Ei '[m]ihomo|[c]lash'"
     ),
     "get_openclash_version": (
